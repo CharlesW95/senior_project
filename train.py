@@ -51,7 +51,6 @@ def train(
     encoder_layer_filters = vgg_layer_params(encoder_layer)['filters']
     encoder_layer_shape = (None, encoder_layer_filters, None, None)
 
-
     # decoder->encoder setup
     if decoder_activation == 'relu':
         decoder_activation = tf.nn.relu
@@ -69,7 +68,6 @@ def train(
     with open_weights(vgg) as w:
         vgg = build_vgg(images, w, last_layer=encoder_layer)
         encoder = vgg[encoder_layer]
-
 
     # loss setup
     # content_target, style_targets will hold activations of content and style
@@ -91,7 +89,6 @@ def train(
     else:
         tv_loss = tf.constant(0, dtype=tf.float32)
     loss += tv_loss
-
 
     # training setup
     batch = setup_input_pipeline(content_dir, style_dir, batch_size,
@@ -140,6 +137,7 @@ def train(
                     images: style_batch
                 })
 
+                # This is the AdaIN step
                 output_batch_encoded = sess.run(output_encoded, feed_dict={
                     content_encoded: content_batch_encoded,
                     style_encoded: style_batch_encoded

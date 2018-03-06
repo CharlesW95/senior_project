@@ -175,8 +175,8 @@ def style_transfer(
                 style_image = load_image(style_path, style_size, crop)
                 if preserve_color:
                     style_image = coral(style_image, content_image)
-                style_image = prepare_image(style_image)
-                content_image = prepare_image(content_image)
+                style_image = prepare_image(style_image, True, data_format)
+                content_image = prepare_image(content_image, True, data_format)
                 style_feature = sess.run(encoder, feed_dict={
                     image: style_image[np.newaxis,:]
                 })

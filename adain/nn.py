@@ -62,7 +62,7 @@ def vgg_layer_params(layer):
     raise ValueError('Unknown layer: ' + layer)
 
 
-def  build_decoder(inputs, weights, trainable,
+def build_decoder(inputs, weights, trainable,
         activation=tf.nn.relu, data_format='channels_first'):
     with tf.variable_scope('decoder'):
         layers = _build_net(_DECODER, inputs, weights,

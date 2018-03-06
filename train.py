@@ -151,6 +151,7 @@ def train(
                     # the commonly used feature responses of the content image"
                     content_target: output_batch_encoded
                 }
+
                 for layer in style_targets:
                     feed_dict[style_targets[layer]] = style_target_vals[layer]
 
@@ -202,7 +203,7 @@ def build_style_losses(current_layers, target_layers, weight, epsilon=1e-6):
         std_loss /= n
 
         losses[layer] = (mean_loss + std_loss) * weight
-    return losses
+    return losses # Returns a dictionary
 
 
 def setup_input_pipeline(content_dir, style_dir, batch_size,

@@ -29,8 +29,8 @@ def style_transfer(
         output_dir='output',
         save_ext='jpg',
         gpu=0,
-        vgg_weights='models/vgg19_weights_normalized.h5',
-        decoder_weights='models/decoder_weights.h5'):
+        vgg_weights='floyd_models/vgg19_weights_normalized.h5',
+        decoder_weights='floyd_models/decoder_weights.h5'):
     assert bool(content) != bool(content_dir), 'Either content or content_dir should be given'
     assert bool(style) != bool(style_dir), 'Either style or style_dir should be given'
 

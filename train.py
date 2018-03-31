@@ -47,6 +47,8 @@ def train(
     style_layers = style_layers.split(',')
 
     # the content layer is also used as the encoder layer
+    # FIXME: Change to 2 separate encoder_layers, one for content
+    # and one for style.
     encoder_layer = content_layer
     encoder_layer_filters = vgg_layer_params(encoder_layer)['filters']
     encoder_layer_shape = (None, encoder_layer_filters, None, None)
@@ -82,6 +84,8 @@ def train(
 
     content_loss = build_content_loss(content_layer, content_target, content_weight)
     style_losses = build_style_losses(style_layers, style_targets, style_weight)
+
+    # FIXME: We can't just do reduce_sum for style loss, we need to weight by layers
     loss = content_loss + tf.reduce_sum(list(style_losses.values()))
 
     if tv_weight:
@@ -233,6 +237,7 @@ def read_preprocess(path, num_epochs, initial_size, random_crop_size):
     return image
 
 
+# FIXME: What is the purpose of the random crop?
 def random_crop(image, initial_size, crop_size):
     x = ceil(uniform(0, initial_size - crop_size))
     y = ceil(uniform(0, initial_size - crop_size))

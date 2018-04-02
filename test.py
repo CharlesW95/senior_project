@@ -1,10 +1,14 @@
 #!/usr/bin/env python
+import matplotlib
+matplotlib.use('Agg')
+
 from itertools import product
 import argparse
 import os
 
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
 
 from adain.image import load_image, prepare_image, load_mask, save_image
 from adain.coral import coral
@@ -79,7 +83,7 @@ def style_transfer(
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
         data_format = 'channels_last'
 
-    image, content, style, target, encoder, decoder = _build_graph(vgg_weights,
+    image, content, style, target, encoder, decoder, otherLayers = _build_graph(vgg_weights,
         decoder_weights if decoder_in_h5 else None, alpha, data_format=data_format)
 
     with tf.Session() as sess:
@@ -171,15 +175,21 @@ def style_transfer(
                             style: style_feature[np.newaxis,:]
                         }) * weight
             else:
+                # NOTE: This is the part we care about, if only 1 style image is provided.
                 style_name = get_filename(style_path)
                 style_image = load_image(style_path, style_size, crop)
                 if preserve_color:
                     style_image = coral(style_image, content_image)
                 style_image = prepare_image(style_image, True, data_format)
                 content_image = prepare_image(content_image, True, data_format)
-                style_feature = sess.run(encoder, feed_dict={
+                
+                # Extract other layers
+                style1, style2, style3 = otherLayers
+                styleLayers = sess.run([encoder, style1, style2, style3], feed_dict={
                     image: style_image[np.newaxis,:]
                 })
+                style_feature, styleOutput1, styleOutput2, styleOutput3 = styleLayers
+
                 content_feature = sess.run(encoder, feed_dict={
                     image: content_image[np.newaxis,:]
                 })
@@ -197,6 +207,26 @@ def style_transfer(
             filename = os.path.join(output_dir, filename)
             save_image(filename, output[0], data_format=data_format)
             print('Output image saved at', filename)
+            print("This is style2")
+            print(styleOutput1.shape)
+            print(styleOutput2.shape)
+            print(styleOutput3.shape)
+            print(style_feature.shape)
+
+            # Print out the activations of some layers
+            visualizeActivations(styleOutput1, plotName="1")
+            visualizeActivations(styleOutput2, plotName="2")
+            visualizeActivations(styleOutput3, plotName="3")
+            visualizeActivations(style_feature, plotName="4")
+
+def visualizeActivations(layerOutput, plotName="figure"):
+    fig = plt.figure()
+    for i in range(min(64, layerOutput.shape[1])):
+        output = layerOutput[0, i, :, :]
+        fig.add_subplot(8, 8, i+1)
+        plt.imshow(output)
+    plt.savefig("/output/" + plotName + ".eps", format="eps", dpi=75)
+
 
 
 def _build_graph(vgg_weights, decoder_weights, alpha, data_format):
@@ -216,6 +246,10 @@ def _build_graph(vgg_weights, decoder_weights, alpha, data_format):
         vgg = build_vgg(image, w, data_format=data_format)
         encoder = vgg['conv4_1']
 
+        # Here we can return other layers to check out style encoding
+        otherLayerNames = ["conv1_2", "conv2_2", "conv3_4"]
+        otherLayers = [vgg[i] for i in otherLayerNames]
+
     if decoder_weights:
         with open_weights(decoder_weights) as w:
             decoder = build_decoder(weighted_target, w, trainable=False,
@@ -224,7 +258,8 @@ def _build_graph(vgg_weights, decoder_weights, alpha, data_format):
         decoder = build_decoder(weighted_target, None, trainable=False,
             data_format=data_format)
 
-    return image, content, style, target, encoder, decoder
+    # Return other layers on top of original outputs
+    return image, content, style, target, encoder, decoder, otherLayers
 
 
 if __name__ == '__main__':

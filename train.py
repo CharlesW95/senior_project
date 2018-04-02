@@ -50,7 +50,7 @@ def train(
     # FIXME: Change to 2 separate encoder_layers, one for content
     # and one for style.
     encoder_layer = content_layer
-    encoder_layer_filters = vgg_layer_params(encoder_layer)['filters']
+    encoder_layer_filters = vgg_layer_params(encoder_layer)['filters'] # Just gives you the number of filters
     encoder_layer_shape = (None, encoder_layer_filters, None, None)
 
     # decoder->encoder setup
@@ -61,6 +61,8 @@ def train(
     else:
         raise ValueError('Unknown activation: ' + decoder_activation)
 
+    # This is a placeholder because we are going to feed it the output
+    # from the encoder defined below.
     content_encoded = tf.placeholder(tf.float32, shape=encoder_layer_shape)
     style_encoded = tf.placeholder(tf.float32, shape=encoder_layer_shape)
     output_encoded = adain(content_encoded, style_encoded)
@@ -74,7 +76,7 @@ def train(
     # loss setup
     # content_target, style_targets will hold activations of content and style
     # images respectively
-    content_layer = vgg[content_layer]
+    content_layer = vgg[content_layer] # In this case it's the same as encoder_layer
     content_target = tf.placeholder(tf.float32, shape=encoder_layer_shape)
     style_layers = {layer: vgg[layer] for layer in style_layers}
     style_targets = {
@@ -121,7 +123,7 @@ def train(
             saver.restore(sess, latest)
         else:
             sess.run(tf.global_variables_initializer())
-
+        
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
@@ -181,6 +183,7 @@ def train(
         saver.save(sess, os.path.join(checkpoint_dir, 'adain-final'))
 
 
+# Simple Euclidean distance
 def build_content_loss(current, target, weight):
     loss = tf.reduce_mean(tf.squared_difference(current, target))
     loss *= weight
@@ -209,7 +212,7 @@ def build_style_losses(current_layers, target_layers, weight, epsilon=1e-6):
         losses[layer] = (mean_loss + std_loss) * weight
     return losses # Returns a dictionary
 
-
+# FIXME: This is the top level of where we can prevent the random_crop
 def setup_input_pipeline(content_dir, style_dir, batch_size,
         num_epochs, initial_size, random_crop_size):
     content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size)
@@ -232,12 +235,11 @@ def read_preprocess(path, num_epochs, initial_size, random_crop_size):
     image = tf.decode_raw(features['image'], tf.uint8)
     image.set_shape((3*initial_size*initial_size))
     image = tf.reshape(image, (3, initial_size, initial_size))
-    image = random_crop(image, initial_size, random_crop_size)
+    # NOTE: Random crop step removed.
+    # image = random_crop(image, initial_size, random_crop_size)
     image = tf.cast(image, tf.float32) / 255
     return image
 
-
-# FIXME: What is the purpose of the random crop?
 def random_crop(image, initial_size, crop_size):
     x = ceil(uniform(0, initial_size - crop_size))
     y = ceil(uniform(0, initial_size - crop_size))

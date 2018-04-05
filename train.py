@@ -214,7 +214,7 @@ def build_style_losses(current_layers, target_layers, weight, epsilon=1e-6):
 # FIXME: This is the top level of where we can prevent the random_crop
 def setup_input_pipeline(content_dir, style_dir, batch_size,
         num_epochs, initial_size, random_crop_size):
-    content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size)
+    content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size, crop_on=False)
     style = read_preprocess(style_dir, num_epochs, initial_size, random_crop_size)
     return tf.train.shuffle_batch([content, style],
         batch_size=batch_size,
@@ -222,7 +222,7 @@ def setup_input_pipeline(content_dir, style_dir, batch_size,
         min_after_dequeue=batch_size*2)
 
 
-def read_preprocess(path, num_epochs, initial_size, random_crop_size):
+def read_preprocess(path, num_epochs, initial_size, random_crop_size, crop_on=True):
     filenames = tf.train.match_filenames_once(os.path.join(path, '*.tfrecords'))
     filename_queue = tf.train.string_input_producer(filenames,
         num_epochs=num_epochs, shuffle=True)
@@ -237,7 +237,8 @@ def read_preprocess(path, num_epochs, initial_size, random_crop_size):
     # NOTE: Random crop step removed.
     # image = random_crop(image, initial_size, random_crop_size)
     # Introducing center crop to hopefully improve situation
-    image = center_crop(image, random_crop_size)
+    if crop_on: # We are NOT cropping for content images
+        image = center_crop(image, random_crop_size)
     image = tf.cast(image, tf.float32) / 255
     return image
 

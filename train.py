@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from math import ceil
+from math import ceil, floor
 from random import uniform
 import argparse
 import os
@@ -235,6 +235,8 @@ def read_preprocess(path, num_epochs, initial_size, random_crop_size):
     image = tf.reshape(image, (3, initial_size, initial_size))
     # NOTE: Random crop step removed.
     # image = random_crop(image, initial_size, random_crop_size)
+    # Introducing center crop to hopefully improve situation
+    image = center_crop(image, random_crop_size)
     image = tf.cast(image, tf.float32) / 255
     return image
 
@@ -242,6 +244,16 @@ def random_crop(image, initial_size, crop_size):
     x = ceil(uniform(0, initial_size - crop_size))
     y = ceil(uniform(0, initial_size - crop_size))
     image = image[:,y:y+crop_size,x:x+crop_size]
+    image.set_shape((3, crop_size, crop_size))
+    return image
+
+# New: replace random_crop with center crop
+def center_crop(image, crop_size):
+    image_shape = image.get_shape()
+    offset_length = math.floor(float(crop_size/2))
+    x_start = math.floor(image_shape[2]/2 - offset_length)
+    y_start = math.floor(image_shape[1]/2 - offset_length)
+    image = image[:, x_start:x_start+crop_size, y_start:y_start+crop_size]
     image.set_shape((3, crop_size, crop_size))
     return image
 

@@ -44,7 +44,9 @@ def style_transfer(
         os.mkdir(output_dir)
 
     # Assume that it is either an h5 file or a name of a TensorFlow checkpoint
-    decoder_in_h5 = decoder_weights.endswith('.h5')
+    # NOTE: For now, artificially switching off pretrained h5 weights
+    decoder_in_h5 = False
+    # decoder_weights.endswith('.h5')
 
     if content:
         content_batch = [content]

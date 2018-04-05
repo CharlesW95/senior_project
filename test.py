@@ -34,7 +34,8 @@ def style_transfer(
         save_ext='jpg',
         gpu=0,
         vgg_weights='/floyd_models/vgg19_weights_normalized.h5',
-        decoder_weights='/floyd_models/decoder_weights.h5'):
+        decoder_weights='/floyd_models/decoder_weights.h5',
+        tf_checkpoint_dir=None):
     assert bool(content) != bool(content_dir), 'Either content or content_dir should be given'
     assert bool(style) != bool(style_dir), 'Either style or style_dir should be given'
 
@@ -89,9 +90,9 @@ def style_transfer(
     with tf.Session() as sess:
         if decoder_in_h5:
             sess.run(tf.global_variables_initializer())
-        else:
+        elif tf_checkpoint_dir is not None: # Some checkpoint was provided
             saver = tf.train.Saver()
-            saver.restore(sess, decoder_weights)
+            saver.restore(sess, os.path.join(tf_checkpoint_dir, 'adain-final'))
 
         for content_path, style_path in product(content_batch, style_batch):
             content_name = get_filename(content_path)
@@ -304,6 +305,9 @@ if __name__ == '__main__':
     parser.add_argument('--mask', help="""Mask to apply spatial
         control, assume to be the path to a binary mask of the same size as
         content image""")
+    parser.add_argument('--tf_checkpoint_dir', default=params['tf_checkpoint_dir'], type=str,
+        help="""Location of tf_checkpoint, if provided.""")
+    
 
     args = parser.parse_args()
     style_transfer(**vars(args))

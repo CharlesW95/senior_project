@@ -83,7 +83,7 @@ def _build_net(definition, inputs, weights, activation, trainable, data_format):
             if weights: # pretrained weights provided
                 W_init = tf.constant_initializer(weights[name+'_W'])
                 b_init = tf.constant_initializer(weights[name+'_b'])
-            else:
+            else: # Comes here if we just provide a saved checkpoint
                 W_init = tf.contrib.layers.xavier_initializer()
                 b_init = tf.zeros_initializer()
             layer = tf.layers.conv2d(layer,

@@ -13,9 +13,9 @@ from adain.weights import open_weights
 
 
 def train(
-        content_dir='datasets/coco',
-        style_dir='datasets/wikiart',
-        checkpoint_dir='checkpoints',
+        content_dir='/floyd_images/',
+        style_dir='/floyd_images/',
+        checkpoint_dir='output',
         decoder_activation='relu',
         initial_size=512,
         random_crop_size=256,
@@ -34,7 +34,7 @@ def train(
         save_every=2000,
         print_every=10,
         gpu=0,
-        vgg='models/vgg19_weights_normalized.h5'):
+        vgg='/floyd_models/vgg19_weights_normalized.h5'):
     assert initial_size >= random_crop_size, 'Images are too small to be cropped'
     assert gpu >= 0, 'CPU mode is not supported'
 
@@ -47,8 +47,6 @@ def train(
     style_layers = style_layers.split(',')
 
     # the content layer is also used as the encoder layer
-    # FIXME: Change to 2 separate encoder_layers, one for content
-    # and one for style.
     encoder_layer = content_layer
     encoder_layer_filters = vgg_layer_params(encoder_layer)['filters'] # Just gives you the number of filters
     encoder_layer_shape = (None, encoder_layer_filters, None, None)

@@ -18,20 +18,20 @@ def train(
         checkpoint_dir='output',
         decoder_activation='relu',
         initial_size=512,
-        random_crop_size=256,
+        random_crop_size=128,
         resume=False,
         optimizer='adam',
         learning_rate=1e-4,
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=16,
+        num_epochs=64,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
         style_weight=1e-2,
         content_weight=1,
-        save_every=2000,
+        save_every=5000,
         print_every=10,
         gpu=0,
         vgg='/floyd_models/vgg19_weights_normalized.h5'):
@@ -83,7 +83,8 @@ def train(
     }
 
     content_loss = build_content_loss(content_layer, content_target, content_weight)
-    style_losses = build_style_losses(style_layers, style_targets, style_weight)
+    # NOTE: We double style weight here for training.
+    style_losses = build_style_losses(style_layers, style_targets, style_weight * 2)
 
     # FIXME: We can't just do reduce_sum for style loss, we need to weight by layers
     loss = content_loss + tf.reduce_sum(list(style_losses.values()))
@@ -249,10 +250,10 @@ def random_crop(image, initial_size, crop_size):
 
 # New: replace random_crop with center crop
 def center_crop(image, crop_size):
-    image_shape = image.get_shape()
-    offset_length = math.floor(float(crop_size/2))
-    x_start = math.floor(image_shape[2]/2 - offset_length)
-    y_start = math.floor(image_shape[1]/2 - offset_length)
+    image_shape = image.get_shape().as_list()
+    offset_length = floor(float(crop_size/2))
+    x_start = floor(image_shape[2]/2 - offset_length)
+    y_start = floor(image_shape[1]/2 - offset_length)
     image = image[:, x_start:x_start+crop_size, y_start:y_start+crop_size]
     image.set_shape((3, crop_size, crop_size))
     return image

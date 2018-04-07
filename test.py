@@ -9,6 +9,8 @@ import os
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import pylab 
+import scipy.stats as stats
 
 from adain.image import load_image, prepare_image, load_mask, save_image
 from adain.coral import coral
@@ -210,17 +212,14 @@ def style_transfer(
             filename = os.path.join(output_dir, filename)
             save_image(filename, output[0], data_format=data_format)
             print('Output image saved at', filename)
-            print("This is style2")
-            print(styleOutput1.shape)
-            print(styleOutput2.shape)
-            print(styleOutput3.shape)
-            print(style_feature.shape)
 
-            # Print out the activations of some layers
-            visualizeActivations(styleOutput1, plotName="1")
-            visualizeActivations(styleOutput2, plotName="2")
-            visualizeActivations(styleOutput3, plotName="3")
-            visualizeActivations(style_feature, plotName="4")
+            layersToViz = [styleOutput1, styleOutput2, styleOutput3, style_feature]
+
+            for i, layer in enumerate(layersToViz):
+                visualizeActivations(layer, plotName=str(i+1))
+                testNormality(layer, plotName=str(i+1))
+
+            
 
 def visualizeActivations(layerOutput, plotName="figure"):
     fig = plt.figure()
@@ -229,6 +228,15 @@ def visualizeActivations(layerOutput, plotName="figure"):
         fig.add_subplot(8, 8, i+1)
         plt.imshow(output)
     plt.savefig("/output/" + plotName + ".eps", format="eps", dpi=75)
+
+def testNormality(layerOutput, plotName):
+    fig = plt.figure()
+    for i in range(min(64, layerOutput.shape[1])):
+        fig.add_subplot(8, 8, i+1)
+        flattened_output = layerOutput[0, i, :, :].flatten()
+        stats.probplot(flattened_output, dist="norm", plot=pylab)
+        pylab.show()
+    plt.savefig("/output/" + plotName + "_qq.eps", format="eps", dpi=75)
 
 
 

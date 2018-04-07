@@ -25,7 +25,7 @@ def train(
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=64,
+        num_epochs=48,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
@@ -84,7 +84,7 @@ def train(
 
     content_loss = build_content_loss(content_layer, content_target, content_weight)
     # NOTE: We double style weight here for training.
-    style_losses = build_style_losses(style_layers, style_targets, style_weight * 2)
+    style_losses = build_style_losses(style_layers, style_targets, style_weight)
 
     # FIXME: We can't just do reduce_sum for style loss, we need to weight by layers
     loss = content_loss + tf.reduce_sum(list(style_losses.values()))

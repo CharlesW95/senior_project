@@ -28,7 +28,7 @@ def train(
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=144,
+        num_epochs=100,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
@@ -85,13 +85,13 @@ def train(
         for layer in style_layers
     }
 
-    # TODO: Introduce new style target elements.
-
     content_loss = build_content_loss(content_layer, content_target, content_weight)
 
-    style_losses = build_style_losses(style_layers, style_targets, style_weight)
+    style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
 
-    loss = content_loss + tf.reduce_sum(list(style_losses.values()))
+    style_content_loss = build_style_content_loss(style_layers, style_targets, 0.25)
+
+    loss = content_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
     if tv_weight:
         tv_loss = tf.reduce_sum(tf.image.total_variation(images)) * tv_weight
@@ -164,18 +164,18 @@ def train(
                 for layer in style_targets:
                     feed_dict[style_targets[layer]] = style_target_vals[layer]
 
-                fetches = [train_op, loss, content_loss, style_losses, tv_loss, global_step]
+                fetches = [train_op, loss, content_loss, style_texture_losses, style_content_loss, tv_loss, global_step]
                 result = sess.run(fetches, feed_dict=feed_dict)
-                _, loss_val, content_loss_val, style_loss_vals, tv_loss_val, i = result
+                _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, tv_loss_val, i = result
 
                 if i % print_every == 0:
-                    style_loss_val = sum(style_loss_vals.values())
-                    style_loss_vals = '\t'.join(sorted(['%s = %0.4f' % (name, val) for name, val in style_loss_vals.items()]))
+                    style_texture_loss_val = sum(style_texture_loss_vals.values())
+                    # style_loss_vals = '\t'.join(sorted(['%s = %0.4f' % (name, val) for name, val in style_loss_vals.items()]))
                     print(i,
                         'loss = %0.4f' % loss_val,
                         'content = %0.4f' % content_loss_val,
-                        'style = %0.4f' % style_loss_val,
-                        style_loss_vals,
+                        'style_texture = %0.4f' % style_loss_val,
+                        'style_content = %0.4f' % style_content_loss_val,
                         'tv = %0.4f' % tv_loss_val, sep='\t')
 
                 if i % save_every == 0:
@@ -193,9 +193,9 @@ def build_content_loss(current, target, weight):
     return loss
 
 
-def build_style_losses(current_layers, target_layers, weight, epsilon=1e-6):
+def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e-6):
     losses = {}
-    layer_weights = [0.5, 0.75, 1.25, 1.5]
+    # layer_weights = [0.5, 0.75, 1.25, 1.5]
     for i, layer in enumerate(current_layers):
         current, target = current_layers[layer], target_layers[layer]
 
@@ -213,15 +213,25 @@ def build_style_losses(current_layers, target_layers, weight, epsilon=1e-6):
         mean_loss /= n
         std_loss /= n
 
-        losses[layer] = (mean_loss + std_loss) * weight * layer_weights[i]
+        losses[layer] = (mean_loss + std_loss) * weight
 
     return losses # Returns a dictionary
+
+def build_style_content_loss(current_layers, target_layers, weight):
+    cos_layers = ["conv2_1", "conv3_1"]
+    style_content_loss = 0.0
+    for layer in cos_layers:
+        current, target = current_layers[layer], target_layers[layer]
+        layer_loss = tf.reduce_mean(tf.squared_difference(current, target))
+        style_content_loss += layer_loss * weight
+    
+    return style_content_loss
 
 def setup_input_pipeline(content_dir, style_dir, batch_size,
         num_epochs, initial_size, random_crop_size):
     content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size)
     style = read_preprocess(style_dir, num_epochs, initial_size, random_crop_size)
-    return tf.train.shuffle_batch([content, style],
+    return tf.train.shuffle_batch(content, style],
         batch_size=batch_size,
         capacity=1000,
         min_after_dequeue=batch_size*2)

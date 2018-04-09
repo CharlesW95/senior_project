@@ -1,5 +1,4 @@
 import tensorflow as tf
-
 from adain.layer import upsample_nearest, vgg_preprocess
 
 

@@ -11,6 +11,9 @@ from adain.norm import adain
 from adain.util import get_params
 from adain.weights import open_weights
 
+# Extra image resizing
+from adain.image import scale_image
+
 
 def train(
         content_dir='/floyd_images/',
@@ -18,7 +21,7 @@ def train(
         checkpoint_dir='output',
         decoder_activation='relu',
         initial_size=512,
-        random_crop_size=128,
+        random_crop_size=256,
         resume=False,
         optimizer='adam',
         learning_rate=1e-4,
@@ -83,10 +86,9 @@ def train(
     }
 
     content_loss = build_content_loss(content_layer, content_target, content_weight)
-    # NOTE: We double style weight here for training.
+
     style_losses = build_style_losses(style_layers, style_targets, style_weight)
 
-    # FIXME: We can't just do reduce_sum for style loss, we need to weight by layers
     loss = content_loss + tf.reduce_sum(list(style_losses.values()))
 
     if tv_weight:
@@ -211,10 +213,9 @@ def build_style_losses(current_layers, target_layers, weight, epsilon=1e-6):
         losses[layer] = (mean_loss + std_loss) * weight
     return losses # Returns a dictionary
 
-# FIXME: This is the top level of where we can prevent the random_crop
 def setup_input_pipeline(content_dir, style_dir, batch_size,
         num_epochs, initial_size, random_crop_size):
-    content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size)
+    content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size, crop_on=False)
     style = read_preprocess(style_dir, num_epochs, initial_size, random_crop_size)
     return tf.train.shuffle_batch([content, style],
         batch_size=batch_size,
@@ -231,14 +232,21 @@ def read_preprocess(path, num_epochs, initial_size, random_crop_size, crop_on=Tr
     features = tf.parse_single_example(serialized, features={
         'image': tf.FixedLenFeature([], tf.string),
     })
+
     image = tf.decode_raw(features['image'], tf.uint8)
+
+    # NOTE: By this point, images have already been resized into squares
+    # with a simple center crop in the preprocessing stage.
     image.set_shape((3*initial_size*initial_size))
     image = tf.reshape(image, (3, initial_size, initial_size))
+
     # NOTE: Random crop step removed.
     # image = random_crop(image, initial_size, random_crop_size)
     # Introducing center crop to hopefully improve situation
+
     if crop_on: # We are NOT cropping for content images
         image = center_crop(image, random_crop_size)
+
     image = tf.cast(image, tf.float32) / 255
     return image
 
@@ -258,6 +266,7 @@ def center_crop(image, crop_size):
     image = image[:, x_start:x_start+crop_size, y_start:y_start+crop_size]
     image.set_shape((3, crop_size, crop_size))
     return image
+
 
 
 if __name__ == '__main__':

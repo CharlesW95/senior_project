@@ -1,7 +1,6 @@
 from scipy.misc import imread, imresize, imsave
 import numpy as np
 
-
 def load_image(filename, size, crop):
     image = imread(filename, mode='RGB')
     if crop:
@@ -9,7 +8,6 @@ def load_image(filename, size, crop):
     if size:
         image = scale_image(image, size)
     return image
-
 
 def prepare_image(image, normalize=True, data_format='channels_first'):
     if normalize:

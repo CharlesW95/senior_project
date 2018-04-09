@@ -207,8 +207,8 @@ def build_style_losses(current_layers, target_layers, weight, epsilon=1e-6):
         n = tf.cast(tf.shape(current)[0], dtype=tf.float32)
         mean_loss /= n
         std_loss /= n
-
-        losses[layer] = (mean_loss + std_loss) * weight
+    
+        losses[layer] = ((2 * mean_loss) + (0.5 * std_loss)) * weight
     return losses # Returns a dictionary
 
 # FIXME: This is the top level of where we can prevent the random_crop

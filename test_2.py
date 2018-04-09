@@ -37,7 +37,9 @@ def style_transfer(
         gpu=0,
         vgg_weights='/floyd_models/vgg19_weights_normalized.h5',
         decoder_weights='/floyd_models/decoder_weights.h5',
-        tf_checkpoint_dir=None):
+        tf_checkpoint_dir=None,
+        representation_layer="conv4_1",
+        rep_index=0):
     assert bool(content) != bool(content_dir), 'Either content or content_dir should be given'
     assert bool(style) != bool(style_dir), 'Either style or style_dir should be given'
 
@@ -88,8 +90,9 @@ def style_transfer(
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
         data_format = 'channels_last'
 
-    image, content, style, target, encoder, decoder, otherLayers = _build_graph(vgg_weights,
-        decoder_weights if decoder_in_h5 else None, alpha, data_format=data_format)
+    image, content, style, target, encoder, decoder = _build_graph(vgg_weights,
+        decoder_weights if decoder_in_h5 else None, alpha, data_format=data_format,
+        representation_layer=representation_layer, rep_index=rep_index)
 
     with tf.Session() as sess:
         if decoder_in_h5:
@@ -189,11 +192,9 @@ def style_transfer(
                 content_image = prepare_image(content_image, True, data_format)
                 
                 # Extract other layers
-                style1, style2, style3 = otherLayers
-                styleLayers = sess.run([encoder, style1, style2, style3], feed_dict={
+                style_feature = sess.run(encoder, feed_dict={
                     image: style_image[np.newaxis,:]
                 })
-                style_feature, styleOutput1, styleOutput2, styleOutput3 = styleLayers
 
                 content_feature = sess.run(encoder, feed_dict={
                     image: content_image[np.newaxis,:]
@@ -213,12 +214,6 @@ def style_transfer(
             save_image(filename, output[0], data_format=data_format)
             print('Output image saved at', filename)
 
-            layersToViz = [styleOutput1, styleOutput2, styleOutput3, style_feature]
-
-            for i, layer in enumerate(layersToViz):
-                visualizeActivations(layer, plotName=str(i+1))
-                # testNormality(layer)
-
             
 
 def visualizeActivations(layerOutput, plotName="figure"):
@@ -231,7 +226,6 @@ def visualizeActivations(layerOutput, plotName="figure"):
 
 def testNormality(layerOutput):
     p_values = []
-    # Collect p-value for every feature map.
     for i in range(layerOutput.shape[1]):
         flattened_output = layerOutput[0, i, :, :].flatten()
         k2, p = stats.normaltest(flattened_output)
@@ -242,11 +236,12 @@ def testNormality(layerOutput):
     p_values = np.asarray(p_values)
     print(np.mean(p_values))
 
-def _build_graph(vgg_weights, decoder_weights, alpha, data_format):
+def _build_graph(vgg_weights, decoder_weights, alpha, data_format, representation_layer, rep_index):
     if data_format == 'channels_first':
+        num_channels = 64 * (2 ** rep_index)
         image = tf.placeholder(shape=(None,3,None,None), dtype=tf.float32)
-        content = tf.placeholder(shape=(1,512,None,None), dtype=tf.float32)
-        style = tf.placeholder(shape=(1,512,None,None), dtype=tf.float32)
+        content = tf.placeholder(shape=(1,num_channels,None,None), dtype=tf.float32)
+        style = tf.placeholder(shape=(1,num_channels,None,None), dtype=tf.float32)
     else:
         image = tf.placeholder(shape=(None,None,None,3), dtype=tf.float32)
         content = tf.placeholder(shape=(1,None,None,512), dtype=tf.float32)
@@ -257,11 +252,7 @@ def _build_graph(vgg_weights, decoder_weights, alpha, data_format):
 
     with open_weights(vgg_weights) as w:
         vgg = build_vgg(image, w, data_format=data_format)
-        encoder = vgg['conv4_1']
-
-        # Here we can return other layers to check out style encoding
-        otherLayerNames = ["conv1_2", "conv2_2", "conv3_4"]
-        otherLayers = [vgg[i] for i in otherLayerNames]
+        encoder = vgg[representation_layer]
 
     if decoder_weights:
         with open_weights(decoder_weights) as w:
@@ -272,7 +263,7 @@ def _build_graph(vgg_weights, decoder_weights, alpha, data_format):
             data_format=data_format)
 
     # Return other layers on top of original outputs
-    return image, content, style, target, encoder, decoder, otherLayers
+    return image, content, style, target, encoder, decoder
 
 
 if __name__ == '__main__':
@@ -322,4 +313,7 @@ if __name__ == '__main__':
     
 
     args = parser.parse_args()
-    style_transfer(**vars(args))
+    rep_layers = ["conv1_1", "conv2_1", "conv3_1", "conv4_1"]
+    for i, layer in enumerate(rep_layers):
+        print("Running with layer: %s" % (layer))
+        style_transfer(**vars(args), representation_layer=layer, rep_index=i)

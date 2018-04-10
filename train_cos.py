@@ -28,13 +28,13 @@ def train(
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=100,
+        num_epochs=144,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
         style_weight=1e-2,
         content_weight=1,
-        save_every=5000,
+        save_every=10000,
         print_every=10,
         gpu=0,
         vgg='/floyd_models/vgg19_weights_normalized.h5'):
@@ -89,7 +89,7 @@ def train(
 
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
 
-    style_content_loss = build_style_content_loss(style_layers, style_targets, 0.25)
+    style_content_loss = build_style_content_loss(style_layers, style_targets, 0.15)
 
     loss = content_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
@@ -164,7 +164,8 @@ def train(
                 for layer in style_targets:
                     feed_dict[style_targets[layer]] = style_target_vals[layer]
 
-                fetches = [train_op, loss, content_loss, style_texture_losses, style_content_loss, tv_loss, global_step]
+                fetches = [train_op, loss, content_loss, style_texture_losses,
+                    style_content_loss, tv_loss, global_step]
                 result = sess.run(fetches, feed_dict=feed_dict)
                 _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, tv_loss_val, i = result
 
@@ -174,7 +175,7 @@ def train(
                     print(i,
                         'loss = %0.4f' % loss_val,
                         'content = %0.4f' % content_loss_val,
-                        'style_texture = %0.4f' % style_loss_val,
+                        'style_texture = %0.4f' % style_texture_loss_val,
                         'style_content = %0.4f' % style_content_loss_val,
                         'tv = %0.4f' % tv_loss_val, sep='\t')
 
@@ -195,7 +196,7 @@ def build_content_loss(current, target, weight):
 
 def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e-6):
     losses = {}
-    # layer_weights = [0.5, 0.75, 1.25, 1.5]
+    layer_weights = [0.5, 0.75, 1.25, 1.5]
     for i, layer in enumerate(current_layers):
         current, target = current_layers[layer], target_layers[layer]
 
@@ -213,7 +214,7 @@ def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e
         mean_loss /= n
         std_loss /= n
 
-        losses[layer] = (mean_loss + std_loss) * weight
+        losses[layer] = (mean_loss + std_loss) * weight * layer_weights[i]
 
     return losses # Returns a dictionary
 
@@ -229,9 +230,9 @@ def build_style_content_loss(current_layers, target_layers, weight):
 
 def setup_input_pipeline(content_dir, style_dir, batch_size,
         num_epochs, initial_size, random_crop_size):
-    content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size)
+    content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size, crop_on=False)
     style = read_preprocess(style_dir, num_epochs, initial_size, random_crop_size)
-    return tf.train.shuffle_batch(content, style],
+    return tf.train.shuffle_batch([content, style],
         batch_size=batch_size,
         capacity=1000,
         min_after_dequeue=batch_size*2)
@@ -252,14 +253,18 @@ def read_preprocess(path, num_epochs, initial_size, random_crop_size, crop_on=Tr
     # NOTE: By this point, images have already been resized into squares
     # with a simple center crop in the preprocessing stage.
     image.set_shape((3*initial_size*initial_size))
-    image = tf.reshape(image, (3, initial_size, initial_size))
 
     # NOTE: Random crop step removed.
     # image = random_crop(image, initial_size, random_crop_size)
     # Introducing center crop to hopefully improve situation
 
-    if crop_on: # We are NOT cropping for content images
+    if crop_on:
+        image = tf.reshape(image, (3, initial_size, initial_size))
         image = center_crop(image, random_crop_size)
+    else: # If we're not cropping, just resize to get the same image size
+        image = tf.reshape(image, (initial_size, initial_size, 3)) # H, W, C
+        image = tf.image.resize_images(image, size=(random_crop_size, random_crop_size), align_corners=True)
+        image = tf.reshape(image, (3, random_crop_size, random_crop_size)) # Reshape to ensure uniformity
 
     image = tf.cast(image, tf.float32) / 255
     return image

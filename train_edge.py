@@ -76,7 +76,8 @@ def train(
 
     # New placeholder just to hold content images
     content_image = tf.placeholder(tf.float32, shape=(None, 3, random_crop_size, random_crop_size))
-    content_image_reshaped = tf.reshape(content_image, shape=(-1, random_crop_size, random_crop_size, 3))
+    # NOTE: Here it's best to use transpose, and not reshape
+    content_image_reshaped = tf.transpose(content_image, perm=(0, 2, 3, 1))
     grayscaled_content = tf.image.rgb_to_grayscale(content_image_reshaped)
     # Run sobel operators on it
     filtered_x, filtered_y = edge_detection(grayscaled_content)
@@ -145,8 +146,7 @@ def train(
         with coord.stop_on_exception():
             while not coord.should_stop():
                 content_batch, style_batch = sess.run(batch)
-
-                
+               
                 # step 1
                 # encode content and style images,
                 # compute target style activations,
@@ -194,8 +194,7 @@ def train(
                 # (8, 256, 256, 1)
                 save_edge_images(filt_x_orig, batch_size, "x_filters")
                 save_edge_images(filt_y_orig, batch_size, "y_filters")
-                print(content_batch.shape)
-                original_content_batch = np.reshape(content_batch, newshape=(batch_size, random_crop_size, random_crop_size, 3))
+                original_content_batch = np.transpose(content_batch, axes=(0, 2, 3, 1))
                 save_edge_images(original_content_batch, batch_size, "original_r")
                 exit()
                 if i % print_every == 0:

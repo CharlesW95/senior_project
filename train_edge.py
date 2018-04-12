@@ -32,7 +32,7 @@ def train(
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=36,
+        num_epochs=144,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
@@ -103,10 +103,10 @@ def train(
     filtered_x_target = tf.placeholder(tf.float32, shape=filtered_x.get_shape())
     filtered_y_target = tf.placeholder(tf.float32, shape=filtered_y.get_shape())
 
-    content_general_loss = build_content_general_loss(content_layer, content_target, content_weight)
+    content_general_loss = build_content_general_loss(content_layer, content_target, 0.75)
     content_edge_loss = build_content_edge_loss(filtered_x, filtered_y, filtered_x_target, filtered_y_target, 1.0)
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-    style_content_loss = build_style_content_loss(style_layers, style_targets, 0.15)
+    style_content_loss = build_style_content_loss(style_layers, style_targets, 0.25)
 
     loss = content_general_loss + content_edge_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
@@ -236,7 +236,7 @@ def euclidean_distance(current, target, weight):
 
 def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e-6):
     losses = {}
-    layer_weights = [0.5, 0.75, 1.5, 2.0]
+    layer_weights = [0.5, 0.75, 1.25, 1.5]
     for i, layer in enumerate(current_layers):
         current, target = current_layers[layer], target_layers[layer]
 

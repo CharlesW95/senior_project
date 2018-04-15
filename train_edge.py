@@ -82,7 +82,6 @@ def train(
     # Run sobel operators on it
     filtered_x, filtered_y = edge_detection(grayscaled_content)
     
-
     with open_weights(vgg) as w:
         # We need the VGG for loss computation
         vgg = build_vgg(images, w, last_layer=encoder_layer)
@@ -103,10 +102,10 @@ def train(
     filtered_x_target = tf.placeholder(tf.float32, shape=filtered_x.get_shape())
     filtered_y_target = tf.placeholder(tf.float32, shape=filtered_y.get_shape())
 
-    content_general_loss = build_content_general_loss(content_layer, content_target, 0.75)
-    content_edge_loss = build_content_edge_loss(filtered_x, filtered_y, filtered_x_target, filtered_y_target, 1.0)
+    content_general_loss = build_content_general_loss(content_layer, content_target, 0.5)
+    content_edge_loss = build_content_edge_loss(filtered_x, filtered_y, filtered_x_target, filtered_y_target, 3.0)
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-    style_content_loss = build_style_content_loss(style_layers, style_targets, 0.25)
+    style_content_loss = build_style_content_loss(style_layers, style_targets, 0.5)
 
     loss = content_general_loss + content_edge_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
@@ -259,7 +258,7 @@ def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e
     return losses # Returns a dictionary
 
 def build_style_content_loss(current_layers, target_layers, weight):
-    cos_layers = ["conv2_1", "conv3_1"]
+    cos_layers = ["conv3_1", "conv4_1"]
     style_content_loss = 0.0
     for layer in cos_layers:
         current, target = current_layers[layer], target_layers[layer]

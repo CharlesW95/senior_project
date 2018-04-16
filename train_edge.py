@@ -105,7 +105,7 @@ def train(
     content_general_loss = build_content_general_loss(content_layer, content_target, 0.5)
     content_edge_loss = build_content_edge_loss(filtered_x, filtered_y, filtered_x_target, filtered_y_target, 3.0)
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-    style_content_loss = build_style_content_loss(style_layers, style_targets, 0.5)
+    style_content_loss = build_style_content_loss(style_layers, style_targets, 1.0)
 
     loss = content_general_loss + content_edge_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
@@ -270,7 +270,7 @@ def build_style_content_loss(current_layers, target_layers, weight):
 def setup_input_pipeline(content_dir, style_dir, batch_size,
         num_epochs, initial_size, random_crop_size):
     content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size, crop_on=False)
-    style = read_preprocess(style_dir, num_epochs, initial_size, random_crop_size)
+    style = read_preprocess(style_dir, num_epochs, initial_size, random_crop_size, crop_on=False)
     return tf.train.shuffle_batch([content, style],
         batch_size=batch_size,
         capacity=1000,

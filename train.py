@@ -13,7 +13,7 @@ from adain.weights import open_weights
 
 # Extra image resizing
 from adain.image import scale_image
-
+from image_preprocess import center_crop_tf
 
 def train(
         content_dir='/floyd_images/',
@@ -249,7 +249,7 @@ def read_preprocess(path, num_epochs, initial_size, random_crop_size, crop_on=Tr
     # Introducing center crop to hopefully improve situation
 
     if crop_on: # We are NOT cropping for content images
-        image = center_crop(image, random_crop_size)
+        image = center_crop_tf(image, random_crop_size)
 
     image = tf.cast(image, tf.float32) / 255
     return image
@@ -260,18 +260,6 @@ def random_crop(image, initial_size, crop_size):
     image = image[:,y:y+crop_size,x:x+crop_size]
     image.set_shape((3, crop_size, crop_size))
     return image
-
-# New: replace random_crop with center crop
-def center_crop(image, crop_size):
-    image_shape = image.get_shape().as_list()
-    offset_length = floor(float(crop_size/2))
-    x_start = floor(image_shape[2]/2 - offset_length)
-    y_start = floor(image_shape[1]/2 - offset_length)
-    image = image[:, x_start:x_start+crop_size, y_start:y_start+crop_size]
-    image.set_shape((3, crop_size, crop_size))
-    return image 
-
-
 
 if __name__ == '__main__':
     params = get_params(train)

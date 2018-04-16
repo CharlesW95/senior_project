@@ -19,6 +19,7 @@ from adain.norm import adain
 from adain.weights import open_weights
 from adain.util import get_filename, get_params, extract_image_names_recursive
 
+from image_preprocess import center_crop_np
 
 def style_transfer(
         content=None,
@@ -182,7 +183,11 @@ def style_transfer(
             else:
                 # NOTE: This is the part we care about, if only 1 style image is provided.
                 style_name = get_filename(style_path)
-                style_image = load_image(style_path, style_size, crop)
+
+                # FIXME: Enforce crop so that it emulates what happens at training time.
+                style_image = load_image(style_path, style_size, crop=True) # This only gives us square crop
+                # style_image = center_crop_np(style_image) # Actually crop the center out
+
                 if preserve_color:
                     style_image = coral(style_image, content_image)
                 style_image = prepare_image(style_image, True, data_format)
@@ -218,8 +223,6 @@ def style_transfer(
             for i, layer in enumerate(layersToViz):
                 visualizeActivations(layer, plotName=str(i+1))
                 # testNormality(layer)
-
-            
 
 def visualizeActivations(layerOutput, plotName="figure"):
     fig = plt.figure()

@@ -183,8 +183,6 @@ def style_transfer(
             else:
                 # NOTE: This is the part we care about, if only 1 style image is provided.
                 style_name = get_filename(style_path)
-
-                # FIXME: Enforce crop so that it emulates what happens at training time.
                 style_image = load_image(style_path, style_size, crop=True) # This only gives us square crop
                 # style_image = center_crop_np(style_image) # Actually crop the center out
 
@@ -194,15 +192,15 @@ def style_transfer(
                 content_image = prepare_image(content_image, True, data_format)
                 
                 # Extract other layers
-                style1, style2, style3 = otherLayers
-                styleLayers = sess.run([encoder, style1, style2, style3], feed_dict={
+                conv3_1_layer, conv4_1_layer = otherLayers
+                style_feature, conv3_1_out_style, conv4_1_out_style = sess.run([encoder, conv3_1_layer, conv4_1_layer], feed_dict={
                     image: style_image[np.newaxis,:]
                 })
-                style_feature, styleOutput1, styleOutput2, styleOutput3 = styleLayers
 
                 content_feature = sess.run(encoder, feed_dict={
                     image: content_image[np.newaxis,:]
                 })
+
                 target_feature = sess.run(target, feed_dict={
                     content: content_feature,
                     style: style_feature
@@ -213,23 +211,31 @@ def style_transfer(
                 target: target_feature
             })
 
+            # Grab the relevant layer outputs to see what's being minimized.
+            conv3_1_out_output, conv4_1_out_output = sess.run([conv3_1_layer, conv4_1_layer], feed_dict={
+                image: output
+            })
+
             filename = '%s_stylized_%s.%s' % (content_name, style_name, save_ext)
             filename = os.path.join(output_dir, filename)
             save_image(filename, output[0], data_format=data_format)
             print('Output image saved at', filename)
 
-            layersToViz = [styleOutput1, styleOutput2, styleOutput3, style_feature]
+            # TODO: Change these layers.
+            layersToViz = [conv3_1_out_style, conv4_1_out_style, conv3_1_out_output, conv4_1_out_output]
 
             for i, layer in enumerate(layersToViz):
                 visualizeActivations(layer, plotName=str(i+1))
-                # testNormality(layer)
+
 
 def visualizeActivations(layerOutput, plotName="figure"):
     fig = plt.figure()
     for i in range(min(64, layerOutput.shape[1])):
         output = layerOutput[0, i, :, :]
         fig.add_subplot(8, 8, i+1)
-        plt.imshow(output)
+        # plt.imshow(output)
+        plt.hist(output)
+        plt.show()
     plt.savefig("/output/" + plotName + ".eps", format="eps", dpi=75)
 
 def testNormality(layerOutput):
@@ -263,7 +269,7 @@ def _build_graph(vgg_weights, decoder_weights, alpha, data_format):
         encoder = vgg['conv4_1']
 
         # Here we can return other layers to check out style encoding
-        otherLayerNames = ["conv1_2", "conv2_2", "conv3_4"]
+        otherLayerNames = ["conv3_1", "conv4_1"]
         otherLayers = [vgg[i] for i in otherLayerNames]
 
     if decoder_weights:

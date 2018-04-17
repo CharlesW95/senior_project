@@ -24,15 +24,15 @@ def train(
         style_dir='/floyd_images/',
         checkpoint_dir='output',
         decoder_activation='relu',
-        initial_size=512,
-        random_crop_size=256,
+        initial_size=1024,
+        random_crop_size=512,
         resume=False,
         optimizer='adam',
         learning_rate=1e-4,
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=144,
+        num_epochs=100,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
@@ -102,10 +102,10 @@ def train(
     filtered_x_target = tf.placeholder(tf.float32, shape=filtered_x.get_shape())
     filtered_y_target = tf.placeholder(tf.float32, shape=filtered_y.get_shape())
 
-    content_general_loss = build_content_general_loss(content_layer, content_target, 0.5)
+    content_general_loss = build_content_general_loss(content_layer, content_target, 0.25)
     content_edge_loss = build_content_edge_loss(filtered_x, filtered_y, filtered_x_target, filtered_y_target, 3.0)
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-    style_content_loss = build_style_content_loss(style_layers, style_targets, 1.0)
+    style_content_loss = build_style_content_loss(style_layers, style_targets, 3.0)
 
     loss = content_general_loss + content_edge_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
@@ -258,7 +258,7 @@ def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e
     return losses # Returns a dictionary
 
 def build_style_content_loss(current_layers, target_layers, weight):
-    cos_layers = ["conv3_1", "conv4_1"]
+    cos_layers = ["conv2_1", "conv3_1", "conv4_1"]
     style_content_loss = 0.0
     for layer in cos_layers:
         current, target = current_layers[layer], target_layers[layer]
@@ -275,7 +275,6 @@ def setup_input_pipeline(content_dir, style_dir, batch_size,
         batch_size=batch_size,
         capacity=1000,
         min_after_dequeue=batch_size*2)
-
 
 def read_preprocess(path, num_epochs, initial_size, random_crop_size, crop_on=True):
     filenames = tf.train.match_filenames_once(os.path.join(path, '*.tfrecords'))

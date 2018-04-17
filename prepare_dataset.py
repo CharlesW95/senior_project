@@ -61,7 +61,7 @@ if __name__ == '__main__':
         transposed from HWC to CHW.""")
     parser.add_argument('input_dir', help='Directory containing images (jpg files only)')
     parser.add_argument('output_dir', help='Output directory for TFRecords files')
-    parser.add_argument('--size', type=int, default=512,
+    parser.add_argument('--size', type=int, default=1024,
         help='Scale to this minimum size before cropping, keep original size if set to zero')
     parser.add_argument('--images_per_file', type=int, default=5000,
         help='How many images to have in a single TFRecords file')

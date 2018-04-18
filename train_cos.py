@@ -239,7 +239,7 @@ def setup_input_pipeline(content_dir, style_dir, batch_size,
         min_after_dequeue=batch_size*2)
 
 
-def read_preprocess(path, num_epochs, initial_size, random_crop_size, crop_on=False):
+def read_preprocess(path, num_epochs, initial_size, random_crop_size, crop_on=True):
     filenames = tf.train.match_filenames_once(os.path.join(path, '*.tfrecords'))
     filename_queue = tf.train.string_input_producer(filenames,
         num_epochs=num_epochs, shuffle=True)

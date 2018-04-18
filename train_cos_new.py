@@ -54,6 +54,11 @@ def train(
     encoder_layer_filters = vgg_layer_params(encoder_layer)['filters'] # Just gives you the number of filters
     encoder_layer_shape = (None, encoder_layer_filters, None, None)
 
+    # setup second style layer for developing new input to decoder
+    # second_style_layer = "conv3_1"
+    # second_style_layer_filters = vgg_layer_params(second_style_layer)['filters'] # Just gives you the number of filters
+    # second_style_layer_shape = (None, second_style_layer_filters, None, None)
+
     # decoder->encoder setup
     if decoder_activation == 'relu':
         decoder_activation = tf.nn.relu
@@ -65,11 +70,17 @@ def train(
     # This is a placeholder because we are going to feed it the output
     # from the encoder defined below.
     content_encoded = tf.placeholder(tf.float32, shape=encoder_layer_shape)
-    style_encoded = tf.placeholder(tf.float32, shape=encoder_layer_shape)
+    style_encoded = tf.placeholder(tf.float32, shape=encoder_layer_shape) # conv4_1
     output_encoded = adain(content_encoded, style_encoded)
-    images = build_decoder(output_encoded, weights=None, trainable=True,
-        activation=decoder_activation)
 
+    # The same layers we pass in to the decoder need to be the same ones we use
+    # to compute loss later.
+
+    # Concatenate relevant inputs to be passed into decoder.
+    output_combined = tf.concat([output_encoded, style_encoded], axis=1)
+    images = build_decoder(output_combined, weights=None, trainable=True,
+        activation=decoder_activation)
+    
     with open_weights(vgg) as w:
         vgg = build_vgg(images, w, last_layer=encoder_layer)
         encoder = vgg[encoder_layer]
@@ -159,7 +170,8 @@ def train(
                     output_encoded: output_batch_encoded,
                     # "We use the AdaIN output as the content target, instead of
                     # the commonly used feature responses of the content image"
-                    content_target: output_batch_encoded
+                    content_target: output_batch_encoded,
+                    style_encoded: style_batch_encoded
                 }
 
                 for layer in style_targets:

@@ -11,6 +11,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import pylab 
 import scipy.stats as stats
+import pandas as pd
 
 from adain.image import load_image, prepare_image, load_mask, save_image
 from adain.coral import coral
@@ -230,12 +231,12 @@ def style_transfer(
 
 def visualizeActivations(layerOutput, plotName="figure"):
     fig = plt.figure()
-    for i in range(min(64, layerOutput.shape[1])):
+    for i in range(min(4, layerOutput.shape[1])):
         output = layerOutput[0, i, :, :]
-        fig.add_subplot(8, 8, i+1)
-        # plt.imshow(output)
-        plt.hist(output)
-        plt.show()
+        fig.add_subplot(2, 2, i+1)
+        plt.imshow(output)
+        df =  pd.DataFrame(data=output)
+        df.to_csv("/output/%s_%s.csv" % (str(i), plotName))
     plt.savefig("/output/" + plotName + ".eps", format="eps", dpi=75)
 
 def testNormality(layerOutput):

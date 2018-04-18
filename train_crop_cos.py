@@ -10,10 +10,14 @@ from adain.nn import build_vgg, vgg_layer_params, build_decoder
 from adain.norm import adain
 from adain.util import get_params
 from adain.weights import open_weights
+from edge_detectors import edge_detection
 
 # Extra image resizing
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 from adain.image import scale_image
-
+import matplotlib.pyplot as plt
 
 def train(
         content_dir='/floyd_images/',
@@ -28,7 +32,7 @@ def train(
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=64,
+        num_epochs=100,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
@@ -67,10 +71,19 @@ def train(
     content_encoded = tf.placeholder(tf.float32, shape=encoder_layer_shape)
     style_encoded = tf.placeholder(tf.float32, shape=encoder_layer_shape)
     output_encoded = adain(content_encoded, style_encoded)
+    # NOTE: "images" contains the output of the decoder
     images = build_decoder(output_encoded, weights=None, trainable=True,
         activation=decoder_activation)
 
+    # New placeholder just to hold content images
+    # content_image = tf.placeholder(tf.float32, shape=(None, 3, random_crop_size, random_crop_size))
+    images_reshaped = tf.transpose(images, perm=(0, 2, 3, 1))
+    grayscaled_content = tf.image.rgb_to_grayscale(images_reshaped)
+    # Run sobel operators on it
+    filtered_x, filtered_y = edge_detection(grayscaled_content)
+    
     with open_weights(vgg) as w:
+        # We need the VGG for loss computation
         vgg = build_vgg(images, w, last_layer=encoder_layer)
         encoder = vgg[encoder_layer]
 
@@ -85,14 +98,15 @@ def train(
         for layer in style_layers
     }
 
-    content_loss = build_content_loss(content_layer, content_target, content_weight)
+    # Define placeholders for the targets
+    filtered_x_target = tf.placeholder(tf.float32, shape=filtered_x.get_shape())
+    filtered_y_target = tf.placeholder(tf.float32, shape=filtered_y.get_shape())
 
+    content_general_loss = build_content_general_loss(content_layer, content_target, 0.5)
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
+    style_content_loss = build_style_content_loss(style_layers, style_targets, 5.5)
 
-    # Test with different style weights empirically
-    style_content_loss = build_style_content_loss(style_layers, style_targets, 0.15)
-
-    loss = content_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
+    loss = tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
     if tv_weight:
         tv_loss = tf.reduce_sum(tf.image.total_variation(images)) * tv_weight
@@ -134,7 +148,7 @@ def train(
         with coord.stop_on_exception():
             while not coord.should_stop():
                 content_batch, style_batch = sess.run(batch)
-
+               
                 # step 1
                 # encode content and style images,
                 # compute target style activations,
@@ -152,6 +166,11 @@ def train(
                     content_encoded: content_batch_encoded,
                     style_encoded: style_batch_encoded
                 })
+                
+                # Actual target values for edge loss
+                filt_x_targ, filt_y_targ = sess.run([filtered_x, filtered_y], feed_dict={
+                    images: content_batch
+                })
 
                 # step 2
                 # run the output batch through the decoder, compute loss
@@ -159,23 +178,33 @@ def train(
                     output_encoded: output_batch_encoded,
                     # "We use the AdaIN output as the content target, instead of
                     # the commonly used feature responses of the content image"
-                    content_target: output_batch_encoded
+                    content_target: output_batch_encoded,
+                    filtered_x_target: filt_x_targ,
+                    filtered_y_target: filt_y_targ
                 }
 
                 for layer in style_targets:
                     feed_dict[style_targets[layer]] = style_target_vals[layer]
 
-                fetches = [train_op, loss, content_loss, style_texture_losses,
+                fetches = [train_op, images, loss, content_general_loss, style_texture_losses,
                     style_content_loss, tv_loss, global_step]
                 result = sess.run(fetches, feed_dict=feed_dict)
-                _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, tv_loss_val, i = result
+                _, output_images, loss_val, content_general_loss_val, \
+                     style_texture_loss_vals, style_content_loss_val, tv_loss_val, i = result
 
+                # Try to plot these out?
+                # (8, 256, 256, 1)
+                # save_edge_images(filt_x_orig, batch_size, "x_filters")
+                # save_edge_images(filt_y_orig, batch_size, "y_filters")
+                # original_content_batch = np.transpose(content_batch, axes=(0, 2, 3, 1))
+                # save_edge_images(original_content_batch, batch_size, "original_r")
+                # exit()
                 if i % print_every == 0:
                     style_texture_loss_val = sum(style_texture_loss_vals.values())
                     # style_loss_vals = '\t'.join(sorted(['%s = %0.4f' % (name, val) for name, val in style_loss_vals.items()]))
                     print(i,
                         'loss = %0.4f' % loss_val,
-                        'content = %0.4f' % content_loss_val,
+                        'content_general = %0.4f' % content_general_loss_val,
                         'style_texture = %0.4f' % style_texture_loss_val,
                         'style_content = %0.4f' % style_content_loss_val,
                         'tv = %0.4f' % tv_loss_val, sep='\t')
@@ -189,15 +218,22 @@ def train(
 
 
 # Simple Euclidean distance
-def build_content_loss(current, target, weight):
+def build_content_general_loss(current, target, weight):
+    return euclidean_distance(current, target, weight)
+
+def build_content_edge_loss(filtered_x, filtered_y, filtered_x_target, filtered_y_target, weight):
+    x_dist = euclidean_distance(filtered_x, filtered_x_target, weight)
+    y_dist = euclidean_distance(filtered_y, filtered_y_target, weight)
+    return x_dist + y_dist
+
+def euclidean_distance(current, target, weight):
     loss = tf.reduce_mean(tf.squared_difference(current, target))
     loss *= weight
     return loss
 
-
 def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e-6):
     losses = {}
-    layer_weights = [0.5, 0.75, 1.5, 2.0]
+    layer_weights = [0.5, 0.75, 1.25, 1.5]
     for i, layer in enumerate(current_layers):
         current, target = current_layers[layer], target_layers[layer]
 
@@ -220,10 +256,15 @@ def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e
     return losses # Returns a dictionary
 
 def build_style_content_loss(current_layers, target_layers, weight):
-    cos_layers = ["conv2_1", "conv3_1"]
+    cos_layers = ["conv3_1", "conv4_1"]
     style_content_loss = 0.0
     for layer in cos_layers:
         current, target = current_layers[layer], target_layers[layer]
+        # threshold = 0.05 # NOTE: We have to test this
+        # mask = current > threshold
+        # squared_diffs = tf.squared_difference(current, target)
+        # masked_squared_diffs = tf.boolean_mask(squared_diffs, mask)
+        # layer_loss = tf.reduce_mean(masked_squared_diffs)
         layer_loss = tf.reduce_mean(tf.squared_difference(current, target))
         style_content_loss += layer_loss * weight
     
@@ -238,8 +279,7 @@ def setup_input_pipeline(content_dir, style_dir, batch_size,
         capacity=1000,
         min_after_dequeue=batch_size*2)
 
-
-def read_preprocess(path, num_epochs, initial_size, random_crop_size, crop_on=False):
+def read_preprocess(path, num_epochs, initial_size, random_crop_size, crop_on=True):
     filenames = tf.train.match_filenames_once(os.path.join(path, '*.tfrecords'))
     filename_queue = tf.train.string_input_producer(filenames,
         num_epochs=num_epochs, shuffle=True)
@@ -287,7 +327,13 @@ def center_crop(image, crop_size):
     image.set_shape((3, crop_size, crop_size))
     return image
 
-
+def save_edge_images(batch, batch_size, plotname):
+    fig = plt.figure()
+    for i in range(batch_size):
+        image = batch[i, :, :, 0]
+        fig.add_subplot(batch_size//2, 2, i+1)
+        plt.imshow(image, cmap='gray')
+    plt.savefig("/output/" + plotname + ".eps", format="eps", dpi=75)
 
 if __name__ == '__main__':
     params = get_params(train)

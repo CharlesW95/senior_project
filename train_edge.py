@@ -24,8 +24,8 @@ def train(
         style_dir='/floyd_images/',
         checkpoint_dir='output',
         decoder_activation='relu',
-        initial_size=1024,
-        random_crop_size=512,
+        initial_size=512,
+        random_crop_size=256,
         resume=False,
         optimizer='adam',
         learning_rate=1e-4,
@@ -102,10 +102,10 @@ def train(
     filtered_x_target = tf.placeholder(tf.float32, shape=filtered_x.get_shape())
     filtered_y_target = tf.placeholder(tf.float32, shape=filtered_y.get_shape())
 
-    content_general_loss = build_content_general_loss(content_layer, content_target, 0.25)
+    content_general_loss = build_content_general_loss(content_layer, content_target, 0.5)
     content_edge_loss = build_content_edge_loss(filtered_x, filtered_y, filtered_x_target, filtered_y_target, 3.0)
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-    style_content_loss = build_style_content_loss(style_layers, style_targets, 3.0)
+    style_content_loss = build_style_content_loss(style_layers, style_targets, 1.5)
 
     loss = content_general_loss + content_edge_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
@@ -258,10 +258,15 @@ def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e
     return losses # Returns a dictionary
 
 def build_style_content_loss(current_layers, target_layers, weight):
-    cos_layers = ["conv2_1", "conv3_1", "conv4_1"]
+    cos_layers = ["conv3_1", "conv4_1"]
     style_content_loss = 0.0
     for layer in cos_layers:
         current, target = current_layers[layer], target_layers[layer]
+        # threshold = 0.05 # NOTE: We have to test this
+        # mask = current > threshold
+        # squared_diffs = tf.squared_difference(current, target)
+        # masked_squared_diffs = tf.boolean_mask(squared_diffs, mask)
+        # layer_loss = tf.reduce_mean(masked_squared_diffs)
         layer_loss = tf.reduce_mean(tf.squared_difference(current, target))
         style_content_loss += layer_loss * weight
     
@@ -270,7 +275,7 @@ def build_style_content_loss(current_layers, target_layers, weight):
 def setup_input_pipeline(content_dir, style_dir, batch_size,
         num_epochs, initial_size, random_crop_size):
     content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size, crop_on=False)
-    style = read_preprocess(style_dir, num_epochs, initial_size, random_crop_size, crop_on=False)
+    style = read_preprocess(style_dir, num_epochs, initial_size, random_crop_size)
     return tf.train.shuffle_batch([content, style],
         batch_size=batch_size,
         capacity=1000,

@@ -261,20 +261,30 @@ def build_style_content_loss_guided(current_layers, target_layers, weight):
 
     cos_layers = ["conv4_1"]
     output_width_names = ["conv4_1_output_width"]
+
     style_content_loss = 0.0
     activationThreshold = 0.075
     for i, layer in enumerate(cos_layers):
-        output_width_name = output_width_names[i] # Set the global variable.
+
+        output_width_name = output_width_names[i] # Set the global variable
         current, target = current_layers[layer], target_layers[layer]
+
+        # First mask - tells us if each neuron corresponds to a rel
+        # part of the input - i.e. does it correspond to some part of the clothing?
         keep_relevant_pixels = current > activationThreshold
         relevant_pixels_cast = tf.cast(keep_relevant_pixels, tf.float32)
-        # Tells us if each filter contains a positive activation map
+
+        # Second mask - tells us if each filter contains a positive activation map
+        # Switches off entire filter if the map isn't positive
         keep_positive_activations = tf.map_fn(mapped_bool_generator, current, dtype=tf.bool)
         positive_activations_cast = tf.cast(keep_positive_activations, tf.float32)
-        # Perform per-element masking first
+
+        # Apply the two masks
         prospective_loss = tf.squared_difference(current, target)
         relevant_pixels = relevant_pixels_cast * prospective_loss
         relevant_positive = positive_activations_cast * relevant_pixels
+
+        # Compute the loss post-mask
         layer_loss = tf.reduce_mean(relevant_positive)
         style_content_loss += layer_loss * weight
     
@@ -282,7 +292,7 @@ def build_style_content_loss_guided(current_layers, target_layers, weight):
 
 
 def mapped_bool_generator(filters):
-    # Passed in per element, of shape (n_filters * h * w)
+    # Passed in per input, of shape (n_filters * h * w)
     # Return a list of bools (each one corresponding to 1 filter)
     filts = tf.map_fn(is_filter_output_valid, filters, dtype=tf.bool)
     return filts
@@ -333,10 +343,6 @@ def read_preprocess(path, num_epochs, initial_size, random_crop_size, crop_on=Tr
     # NOTE: By this point, images have already been resized into squares
     # with a simple center crop in the preprocessing stage.
     image.set_shape((3*initial_size*initial_size))
-
-    # NOTE: Random crop step removed.
-    # image = random_crop(image, initial_size, random_crop_size)
-    # Introducing center crop to hopefully improve situation
 
     if crop_on:
         image = tf.reshape(image, (3, initial_size, initial_size))

@@ -96,12 +96,12 @@ def train(
         for layer in style_layers
     }
 
-    content_loss = build_content_loss(content_layer, content_target, content_weight)
+    content_loss = build_content_loss(content_layer, content_target, 0.5)
 
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
 
     # Test with different style weights empirically
-    style_content_loss = build_style_content_loss(style_layers, style_targets, 0.15)
+    style_content_loss = build_style_content_loss(style_layers, style_targets, 1.5)
 
     loss = content_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 

@@ -91,17 +91,21 @@ def train(
     content_layer = vgg[content_layer] # In this case it's the same as encoder_layer
     content_target = tf.placeholder(tf.float32, shape=encoder_layer_shape)
     style_layers = {layer: vgg[layer] for layer in style_layers}
+
+    conv3_1_output_width_t, conv4_1_output_width_t = tf.shape(style_layers["conv3_1"], \
+        out_type=tf.int32), tf.shape(style_layers["conv4_1"], out_type=tf.int32)
+
     style_targets = {
         layer: tf.placeholder(tf.float32, shape=style_layers[layer].shape)
         for layer in style_layers
     }
 
+    conv3_1_output_width = tf.placeholder(tf.int32, shape=(), name="conv3_1_output_width")
+    conv4_1_output_width = tf.placeholder(tf.int32, shape=(), name="conv4_1_output_width")
+
     content_loss = build_content_loss(content_layer, content_target, 0.5)
-
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-
-    # Test with different style weights empirically
-    style_content_loss = build_style_content_loss(style_layers, style_targets, 1.5)
+    style_content_loss = build_style_content_loss_guided(style_layers, style_targets, 1.5)
 
     loss = content_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
@@ -164,14 +168,23 @@ def train(
                     style_encoded: style_batch_encoded
                 })
 
+                # NOTE: Need to compute output shapes before we can actually compute guided COS loss.
+                conv3_1_shape, conv4_1_shape = sess.run([conv3_1_output_width_t, conv4_1_output_width_t], feed_dict={
+                    images: content_batch
+                })
+
                 # step 2
                 # run the output batch through the decoder, compute loss
                 feed_dict = {
                     output_encoded: output_batch_encoded,
+                    style_encoded: style_batch_encoded,
                     # "We use the AdaIN output as the content target, instead of
                     # the commonly used feature responses of the content image"
                     content_target: output_batch_encoded,
-                    style_encoded: style_batch_encoded
+                    # filtered_x_target: filt_x_targ,
+                    # filtered_y_target: filt_y_targ,
+                    conv3_1_output_width: conv3_1_shape[2],
+                    conv4_1_output_width: conv4_1_shape[2]
                 }
 
                 for layer in style_targets:
@@ -241,9 +254,63 @@ def build_style_content_loss(current_layers, target_layers, weight):
     
     return style_content_loss
 
+def build_style_content_loss_guided(current_layers, target_layers, weight):
+    global output_width_name
+    # cos_layers = ["conv3_1", "conv4_1"]
+    # output_width_names = ["conv3_1_output_width", "conv4_1_output_width"]
+
+    cos_layers = ["conv4_1"]
+    output_width_names = ["conv4_1_output_width"]
+    style_content_loss = 0.0
+    activationThreshold = 0.075
+    for i, layer in enumerate(cos_layers):
+        output_width_name = output_width_names[i] # Set the global variable.
+        current, target = current_layers[layer], target_layers[layer]
+        keep_relevant_pixels = current > activationThreshold
+        relevant_pixels_cast = tf.cast(keep_relevant_pixels, tf.float32)
+        # Tells us if each filter contains a positive activation map
+        keep_positive_activations = tf.map_fn(mapped_bool_generator, current, dtype=tf.bool)
+        positive_activations_cast = tf.cast(keep_positive_activations, tf.float32)
+        # Perform per-element masking first
+        prospective_loss = tf.squared_difference(current, target)
+        relevant_pixels = relevant_pixels_cast * prospective_loss
+        relevant_positive = positive_activations_cast * relevant_pixels
+        layer_loss = tf.reduce_mean(relevant_positive)
+        style_content_loss += layer_loss * weight
+    
+    return style_content_loss
+
+
+def mapped_bool_generator(filters):
+    # Passed in per element, of shape (n_filters * h * w)
+    # Return a list of bools (each one corresponding to 1 filter)
+    filts = tf.map_fn(is_filter_output_valid, filters, dtype=tf.bool)
+    return filts
+
+def is_filter_output_valid(filt):
+    # Determine whether we have a negative mapping
+    inner_width = tf.constant(5, dtype=tf.int32)
+    total_threshold = 2.0
+    filtWidth = retrieve_relevant_placholder()
+    inner_sum = extract_inner_sum(filt, filtWidth, inner_window_width=inner_width)
+    value = inner_sum > total_threshold
+    # Create inner matrix to return
+    return tf.fill([filtWidth, filtWidth], value)
+
+def extract_inner_sum(tensor, filtWidth, inner_window_width):
+    start = (filtWidth - inner_window_width) // 2
+    sliced = tf.slice(tensor, begin=(start, start), size=(inner_window_width, inner_window_width))
+    return tf.reduce_sum(sliced)
+
+def retrieve_relevant_placholder():
+    global output_width_name
+    graph = tf.get_default_graph()
+    return graph.get_tensor_by_name(output_width_name + ":0")
+
+
 def setup_input_pipeline(content_dir, style_dir, batch_size,
         num_epochs, initial_size, random_crop_size):
-    content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size)
+    content = read_preprocess(content_dir, num_epochs, initial_size, random_crop_size, crop_on=False)
     style = read_preprocess(style_dir, num_epochs, initial_size, random_crop_size)
     return tf.train.shuffle_batch([content, style],
         batch_size=batch_size,
@@ -298,8 +365,6 @@ def center_crop(image, crop_size):
     image = image[:, x_start:x_start+crop_size, y_start:y_start+crop_size]
     image.set_shape((3, crop_size, crop_size))
     return image
-
-
 
 if __name__ == '__main__':
     params = get_params(train)

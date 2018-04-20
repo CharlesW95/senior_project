@@ -60,11 +60,6 @@ def train(
     encoder_layer_filters = vgg_layer_params(encoder_layer)['filters'] # Just gives you the number of filters
     encoder_layer_shape = (None, encoder_layer_filters, None, None)
 
-    # setup second style layer for developing new input to decoder
-    # second_style_layer = "conv3_1"
-    # second_style_layer_filters = vgg_layer_params(second_style_layer)['filters'] # Just gives you the number of filters
-    # second_style_layer_shape = (None, second_style_layer_filters, None, None)
-
     # decoder->encoder setup
     if decoder_activation == 'relu':
         decoder_activation = tf.nn.relu
@@ -111,7 +106,7 @@ def train(
 
     content_loss = build_content_loss(content_layer, content_target, 0.75)
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-    style_content_loss, rel_cast, pos_cast, pros, curr = build_style_content_loss_guided(style_layers, style_targets, 1.25)
+    style_content_loss = build_style_content_loss_guided(style_layers, style_targets, content_target, 1.25)
 
     loss = content_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
@@ -197,9 +192,9 @@ def train(
                     feed_dict[style_targets[layer]] = style_target_vals[layer]
 
                 fetches = [train_op, loss, content_loss, style_texture_losses,
-                    style_content_loss, rel_cast, pos_cast, pros, curr, tv_loss, global_step]
+                    style_content_loss, tv_loss, global_step]
                 result = sess.run(fetches, feed_dict=feed_dict)
-                _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, rel_cast_val, pos_cast_val, pros_val, curr_val, tv_loss_val, i = result
+                _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, tv_loss_val, i = result
                 
                 
 
@@ -271,40 +266,43 @@ def build_style_content_loss(current_layers, target_layers, weight):
     
     return style_content_loss
 
-def build_style_content_loss_guided(current_layers, target_layers, weight):
+def build_style_content_loss_guided(current_layers, target_layers, content_encoding, weight):
     global output_width_name
 
     cos_layers = ["conv4_1"]
     output_width_names = ["conv4_1_output_width"]
 
     style_content_loss = 0.0
-    activationThreshold = 0.075
+    activation_threshold = 0.025
 
     for i, layer in enumerate(cos_layers):
         
         output_width_name = output_width_names[i] # Set the global variable
         current, target = current_layers[layer], target_layers[layer]
 
-        # First mask - tells us if each neuron corresponds to a rel
-        # part of the input - i.e. does it correspond to some part of the clothing?
-        keep_relevant_pixels = current > activationThreshold
-        relevant_pixels_cast = tf.cast(keep_relevant_pixels, tf.float32)
+        # Using the first 2 layers of content encoding, generate a foreground and background mask.
+        # Content encoding is of shape: (batch_size * filters * h * w)
+        content_first, content_second = content_encoding[:, 0, :, :], content_encoding[:, 1, :, :]
+        content_first_mask = content_first > activation_threshold
+        content_second_mask = content_second <= activation_threshold
+        foreground_mask = tf.logical_or(content_first_mask, content_second_mask)
+        background_mask = tf.logical_not(foreground_mask)
 
-        # Second mask - tells us if each filter contains a positive activation map
-        # Switches off entire filter if the map isn't positive
-        keep_positive_activations = tf.map_fn(mapped_bool_generator, current, dtype=tf.bool)
-        positive_activations_cast = tf.cast(keep_positive_activations, tf.float32)
+        # Compute squared differences of activations
+        output_content_diff_sq = tf.squared_difference(current, content_encoding)
+        output_style_diff_sq = tf.squared_difference(current, target)
 
-        # Apply the two masks
-        prospective_loss = tf.squared_difference(current, target)
-        relevant_pixels = tf.multiply(relevant_pixels_cast, prospective_loss)
-        relevant_positive = tf.multiply(positive_activations_cast, relevant_pixels)
+        # Use the mask to switch them on and off
+        fg_cast = tf.expand_dims(tf.cast(foreground_mask, dtype=tf.float32), 1)
+        bg_cast = tf.expand_dims(tf.cast(background_mask, dtype=tf.float32), 1)
+        output_content_relevant = fg_cast * output_content_diff_sq
+        output_style_relevant = bg_cast * output_style_diff_sq
 
-        # Compute the loss post-mask
-        layer_loss = tf.reduce_mean(relevant_positive)
+        # Aggregate to obtain loss term
+        layer_loss = tf.reduce_mean(output_content_relevant + output_style_relevant)
         style_content_loss += layer_loss * weight
     
-    return style_content_loss, relevant_pixels_cast, positive_activations_cast, prospective_loss, current
+    return style_content_loss
 
 def mapped_bool_generator(filters):
     # Passed in per input, of shape (n_filters * h * w)

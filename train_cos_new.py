@@ -12,6 +12,12 @@ from adain.norm import adain
 from adain.util import get_params
 from adain.weights import open_weights
 
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 # Extra image resizing
 from adain.image import scale_image
 
@@ -20,15 +26,15 @@ def train(
         style_dir='/floyd_images/',
         checkpoint_dir='output',
         decoder_activation='relu',
-        initial_size=512,
-        random_crop_size=256,
+        initial_size=1024,
+        random_crop_size=512,
         resume=False,
         optimizer='adam',
         learning_rate=1e-4,
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=64,
+        num_epochs=48,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
@@ -103,9 +109,9 @@ def train(
     conv3_1_output_width = tf.placeholder(tf.int32, shape=(), name="conv3_1_output_width")
     conv4_1_output_width = tf.placeholder(tf.int32, shape=(), name="conv4_1_output_width")
 
-    content_loss = build_content_loss(content_layer, content_target, 0.5)
+    content_loss = build_content_loss(content_layer, content_target, 0.75)
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-    style_content_loss = build_style_content_loss_guided(style_layers, style_targets, 1.5)
+    style_content_loss, rel_cast, pos_cast, pros, curr = build_style_content_loss_guided(style_layers, style_targets, 1.25)
 
     loss = content_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
@@ -191,9 +197,22 @@ def train(
                     feed_dict[style_targets[layer]] = style_target_vals[layer]
 
                 fetches = [train_op, loss, content_loss, style_texture_losses,
-                    style_content_loss, tv_loss, global_step]
+                    style_content_loss, rel_cast, pos_cast, pros, curr, tv_loss, global_step]
                 result = sess.run(fetches, feed_dict=feed_dict)
-                _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, tv_loss_val, i = result
+                _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, rel_cast_val, pos_cast_val, pros_val, curr_val, tv_loss_val, i = result
+                
+                def visualizeActivations(layerOutput, plotName="figure"):
+                    fig = plt.figure()
+                    for i in range(min(4, layerOutput.shape[1])):
+                        output = layerOutput[0, i, :, :]
+                        fig.add_subplot(2, 2, i+1)
+                        plt.imshow(output)
+                        df =  pd.DataFrame(data=output)
+                        df.to_csv("/output/%s_%s.csv" % (str(i), plotName))
+                    plt.savefig("/output/" + plotName + ".eps", format="eps", dpi=75)
+                visualizeActivations(content_batch_encoded)
+                visualizeActivations(curr_val, plotName="current")
+                exit()
 
                 if i % print_every == 0:
                     style_texture_loss_val = sum(style_texture_loss_vals.values())
@@ -281,15 +300,14 @@ def build_style_content_loss_guided(current_layers, target_layers, weight):
 
         # Apply the two masks
         prospective_loss = tf.squared_difference(current, target)
-        relevant_pixels = relevant_pixels_cast * prospective_loss
-        relevant_positive = positive_activations_cast * relevant_pixels
+        relevant_pixels = tf.multiply(relevant_pixels_cast, prospective_loss)
+        relevant_positive = tf.multiply(positive_activations_cast, relevant_pixels)
 
         # Compute the loss post-mask
         layer_loss = tf.reduce_mean(relevant_positive)
         style_content_loss += layer_loss * weight
     
-    return style_content_loss
-
+    return style_content_loss, relevant_pixels_cast, positive_activations_cast, prospective_loss, current
 
 def mapped_bool_generator(filters):
     # Passed in per input, of shape (n_filters * h * w)
@@ -316,7 +334,6 @@ def retrieve_relevant_placholder():
     global output_width_name
     graph = tf.get_default_graph()
     return graph.get_tensor_by_name(output_width_name + ":0")
-
 
 def setup_input_pipeline(content_dir, style_dir, batch_size,
         num_epochs, initial_size, random_crop_size):

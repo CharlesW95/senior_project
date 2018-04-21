@@ -106,7 +106,7 @@ def train(
 
     content_loss = build_content_loss(content_layer, content_target, 0.75)
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-    style_content_loss = build_style_content_loss_guided(style_layers, style_targets, content_target, 1.25)
+    style_content_loss, fg, bg, tar = build_style_content_loss_guided(style_layers, style_targets, content_target, 1.25)
 
     loss = content_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
@@ -192,12 +192,48 @@ def train(
                     feed_dict[style_targets[layer]] = style_target_vals[layer]
 
                 fetches = [train_op, loss, content_loss, style_texture_losses,
-                    style_content_loss, tv_loss, global_step]
+                    style_content_loss, fg, bg, tar, tv_loss, global_step]
                 result = sess.run(fetches, feed_dict=feed_dict)
-                _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, tv_loss_val, i = result
+                _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, \
+                    fg_val, bg_val, tar_val, tv_loss_val, i = result
+
+                # Print out the masks
+                fig = plt.figure()
+                for k in range(8):
+                    mask = fg_val[k, 0, :, :]
+                    pd.DataFrame(mask).to_csv("/output/mask_" + str(k) + ".csv")
+                    fig.add_subplot(2, 4, k+1)
+                    plt.imshow(mask, cmap='gray')
+                plt.savefig("/output/masks_" + str(i) + ".eps", format="eps", dpi=75)
+
+                for k in range(8):
+                    mask = tar_val[k, 0, :, :]
+                    fig.add_subplot(2, 4, k+1)
+                    mask_flattened = mask.flatten()
+                    print("Here is the shape")
+                    print(mask_flattened.shape)
+                    print(mask_flattened[:10])
+                    plt.hist(mask_flattened)
+                    plt.show()
+                plt.savefig("/output/first_layer_hist" + str(i) + ".eps", format="eps", dpi=75)
+
+                for k in range(8):
+                    mask = tar_val[k, 1, :, :]
+                    fig.add_subplot(2, 4, k+1)
+                    mask_flattened = mask.flatten()
+                    plt.hist(mask_flattened)
+                    plt.show()
+                plt.savefig("/output/second_layer_hist" + str(i) + ".eps", format="eps", dpi=75)
                 
+                for k in range(8):
+                    first_activation = tar_val[k, 0, :, :]
+                    second_activation = tar_val[k, 1, :, :]
+                    pd.DataFrame(first_activation).to_csv("/output/first_activation_" + str(k) + ".csv")
+                    pd.DataFrame(second_activation).to_csv("/output/second_activation_" + str(k) + ".csv")
                 
 
+                exit()
+                
                 if i % print_every == 0:
                     style_texture_loss_val = sum(style_texture_loss_vals.values())
                     # style_loss_vals = '\t'.join(sorted(['%s = %0.4f' % (name, val) for name, val in style_loss_vals.items()]))
@@ -256,16 +292,6 @@ def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e
 
     return losses # Returns a dictionary
 
-def build_style_content_loss(current_layers, target_layers, weight):
-    cos_layers = ["conv2_1", "conv3_1"]
-    style_content_loss = 0.0
-    for layer in cos_layers:
-        current, target = current_layers[layer], target_layers[layer]
-        layer_loss = tf.reduce_mean(tf.squared_difference(current, target))
-        style_content_loss += layer_loss * weight
-    
-    return style_content_loss
-
 def build_style_content_loss_guided(current_layers, target_layers, content_encoding, weight):
     global output_width_name
 
@@ -302,7 +328,7 @@ def build_style_content_loss_guided(current_layers, target_layers, content_encod
         layer_loss = tf.reduce_mean(output_content_relevant + output_style_relevant)
         style_content_loss += layer_loss * weight
     
-    return style_content_loss
+    return style_content_loss, fg_cast, bg_cast, content_encoding
 
 def mapped_bool_generator(filters):
     # Passed in per input, of shape (n_filters * h * w)

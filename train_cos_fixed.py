@@ -26,15 +26,15 @@ def train(
         style_dir='/floyd_images/',
         checkpoint_dir='output',
         decoder_activation='relu',
-        initial_size=1024,
-        random_crop_size=512,
+        initial_size=512,
+        random_crop_size=256,
         resume=False,
         optimizer='adam',
         learning_rate=1e-4,
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=48,
+        num_epochs=24,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
@@ -74,6 +74,10 @@ def train(
     style_encoded = tf.placeholder(tf.float32, shape=encoder_layer_shape) # conv4_1
     output_encoded = adain(content_encoded, style_encoded)
 
+    # TRIVIAL MASK
+    mask_value = gen_trivial_mask()
+    trivial_mask = tf.constant(mask_value, dtype=tf.bool, name="trivial_mask")
+
     # The same layers we pass in to the decoder need to be the same ones we use
     # to compute loss later.
 
@@ -106,9 +110,11 @@ def train(
 
     content_loss = build_content_loss(content_layer, content_target, 0.75)
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-    style_content_loss, fg, bg, tar = build_style_content_loss_guided(style_layers, style_targets, content_target, 1.25)
+    style_content_loss = build_style_content_loss_guided(style_layers, style_targets, output_encoded, trivial_mask, 1.0)
 
-    loss = content_loss + tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
+    # content_loss + tf.reduce_sum(list(style_texture_losses.values())) + 
+
+    loss = style_content_loss
 
     if tv_weight:
         tv_loss = tf.reduce_sum(tf.image.total_variation(images)) * tv_weight
@@ -170,9 +176,9 @@ def train(
                 })
 
                 # NOTE: Need to compute output shapes before we can actually compute guided COS loss.
-                conv3_1_shape, conv4_1_shape = sess.run([conv3_1_output_width_t, conv4_1_output_width_t], feed_dict={
-                    images: content_batch
-                })
+                # conv3_1_shape, conv4_1_shape = sess.run([conv3_1_output_width_t, conv4_1_output_width_t], feed_dict={
+                #     images: content_batch
+                # })
 
                 # step 2
                 # run the output batch through the decoder, compute loss
@@ -181,59 +187,59 @@ def train(
                     style_encoded: style_batch_encoded,
                     # "We use the AdaIN output as the content target, instead of
                     # the commonly used feature responses of the content image"
-                    content_target: output_batch_encoded,
                     # filtered_x_target: filt_x_targ,
                     # filtered_y_target: filt_y_targ,
-                    conv3_1_output_width: conv3_1_shape[2],
-                    conv4_1_output_width: conv4_1_shape[2]
+                    # conv3_1_output_width: conv3_1_shape[2],
+                    # conv4_1_output_width: conv4_1_shape[2]
                 }
 
                 for layer in style_targets:
                     feed_dict[style_targets[layer]] = style_target_vals[layer]
 
                 fetches = [train_op, loss, content_loss, style_texture_losses,
-                    style_content_loss, fg, bg, tar, tv_loss, global_step]
+                    style_content_loss, tv_loss, global_step]
                 result = sess.run(fetches, feed_dict=feed_dict)
-                _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, \
-                    fg_val, bg_val, tar_val, tv_loss_val, i = result
+                _, loss_val, content_loss_val, style_texture_loss_vals, style_content_loss_val, tv_loss_val, i = result
 
                 # Print out the masks
-                fig = plt.figure()
-                for k in range(8):
-                    mask = fg_val[k, 0, :, :]
-                    pd.DataFrame(mask).to_csv("/output/mask_" + str(k) + ".csv")
-                    fig.add_subplot(2, 4, k+1)
-                    plt.imshow(mask, cmap='gray')
-                plt.savefig("/output/masks_" + str(i) + ".eps", format="eps", dpi=75)
+                # fig = plt.figure()
+                # for k in range(8):
+                #     mask = fg_val[k, 0, :, :]
+                #     pd.DataFrame(mask).to_csv("/output/fg_mask_" + str(k) + ".csv")
+                #     fig.add_subplot(2, 4, k+1)
+                #     plt.imshow(mask, cmap='gray')
+                # plt.savefig("/output/fg_masks_" + str(i) + ".eps", format="eps", dpi=75)
 
-                for k in range(8):
-                    mask = tar_val[k, 0, :, :]
-                    fig.add_subplot(2, 4, k+1)
-                    mask_flattened = mask.flatten()
-                    print("Here is the shape")
-                    print(mask_flattened.shape)
-                    print(mask_flattened[:10])
-                    plt.hist(mask_flattened)
-                    plt.show()
-                plt.savefig("/output/first_layer_hist" + str(i) + ".eps", format="eps", dpi=75)
-
-                for k in range(8):
-                    mask = tar_val[k, 1, :, :]
-                    fig.add_subplot(2, 4, k+1)
-                    mask_flattened = mask.flatten()
-                    plt.hist(mask_flattened)
-                    plt.show()
-                plt.savefig("/output/second_layer_hist" + str(i) + ".eps", format="eps", dpi=75)
-                
-                for k in range(8):
-                    first_activation = tar_val[k, 0, :, :]
-                    second_activation = tar_val[k, 1, :, :]
-                    pd.DataFrame(first_activation).to_csv("/output/first_activation_" + str(k) + ".csv")
-                    pd.DataFrame(second_activation).to_csv("/output/second_activation_" + str(k) + ".csv")
-                
-
-                exit()
-                
+                # fig = plt.figure()
+                # for k in range(8):
+                #     mask = bg_val[k, 0, :, :]
+                #     pd.DataFrame(mask).to_csv("/output/bg_mask_" + str(k) + ".csv")
+                #     fig.add_subplot(2, 4, k+1)
+                #     plt.imshow(mask, cmap='gray')
+                # plt.savefig("/output/bg_masks_" + str(i) + ".eps", format="eps", dpi=75)
+                # for k in range(8):
+                #     mask = tar_val[k, 0, :, :]
+                #     fig.add_subplot(2, 4, k+1)
+                #     mask_flattened = mask.flatten()
+                #     print("Here is the shape")
+                #     print(mask_flattened.shape)
+                #     print(mask_flattened[:10])
+                #     plt.hist(mask_flattened)
+                #     plt.show()
+                # plt.savefig("/output/first_layer_hist" + str(i) + ".eps", format="eps", dpi=75)
+                # for k in range(8):
+                #     mask = tar_val[k, 1, :, :]
+                #     fig.add_subplot(2, 4, k+1)
+                #     mask_flattened = mask.flatten()
+                #     plt.hist(mask_flattened)
+                #     plt.show()
+                # plt.savefig("/output/second_layer_hist" + str(i) + ".eps", format="eps", dpi=75)
+                # for k in range(8):
+                #     first_activation = tar_val[k, 0, :, :]
+                #     second_activation = tar_val[k, 1, :, :]
+                #     pd.DataFrame(first_activation).to_csv("/output/first_activation_" + str(k) + ".csv")
+                #     pd.DataFrame(second_activation).to_csv("/output/second_activation_" + str(k) + ".csv")
+            
                 if i % print_every == 0:
                     style_texture_loss_val = sum(style_texture_loss_vals.values())
                     # style_loss_vals = '\t'.join(sorted(['%s = %0.4f' % (name, val) for name, val in style_loss_vals.items()]))
@@ -292,7 +298,14 @@ def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e
 
     return losses # Returns a dictionary
 
-def build_style_content_loss_guided(current_layers, target_layers, content_encoding, weight):
+# Shape of (8, 1, 32, 32)
+def gen_trivial_mask():
+    vals = [[[[False] * 32] * 32] * 1] * 8
+    vals = np.array(vals)
+    vals[:, :, 8:24, 8:24] = True
+    return vals
+
+def build_style_content_loss_guided(current_layers, target_layers, content_encoding, mask, weight):
     global output_width_name
 
     cos_layers = ["conv4_1"]
@@ -302,33 +315,37 @@ def build_style_content_loss_guided(current_layers, target_layers, content_encod
     activation_threshold = 0.025
 
     for i, layer in enumerate(cos_layers):
-        
         output_width_name = output_width_names[i] # Set the global variable
         current, target = current_layers[layer], target_layers[layer]
 
+        # NOTE: Attempting trivial mask
+        bg_mask = tf.logical_not(mask)
+        bg_cast = tf.cast(bg_mask, dtype=tf.float32)
+        fg_cast = tf.cast(mask, dtype=tf.float32)
+        
         # Using the first 2 layers of content encoding, generate a foreground and background mask.
         # Content encoding is of shape: (batch_size * filters * h * w)
-        content_first, content_second = content_encoding[:, 0, :, :], content_encoding[:, 1, :, :]
-        content_first_mask = content_first > activation_threshold
-        content_second_mask = content_second <= activation_threshold
-        foreground_mask = tf.logical_or(content_first_mask, content_second_mask)
-        background_mask = tf.logical_not(foreground_mask)
+        # content_first, content_second = content_encoding[:, 0, :, :], content_encoding[:, 1, :, :]
+        # content_first_mask = content_first > activation_threshold
+        # content_second_mask = content_second <= activation_threshold
+        # foreground_mask = tf.logical_or(content_first_mask, content_second_mask)
+        # background_mask = tf.logical_not(foreground_mask)
 
-        # Compute squared differences of activations
+        # # Compute squared differences of activations
         output_content_diff_sq = tf.squared_difference(current, content_encoding)
         output_style_diff_sq = tf.squared_difference(current, target)
 
         # Use the mask to switch them on and off
-        fg_cast = tf.expand_dims(tf.cast(foreground_mask, dtype=tf.float32), 1)
-        bg_cast = tf.expand_dims(tf.cast(background_mask, dtype=tf.float32), 1)
-        output_content_relevant = fg_cast * output_content_diff_sq
-        output_style_relevant = bg_cast * output_style_diff_sq
+        # fg_cast = tf.expand_dims(tf.cast(foreground_mask, dtype=tf.float32), 1)
+        # bg_cast = tf.expand_dims(tf.cast(background_mask, dtype=tf.float32), 1)
+        output_content_relevant = bg_cast * output_content_diff_sq
+        output_style_relevant = fg_cast * output_style_diff_sq
 
         # Aggregate to obtain loss term
-        layer_loss = tf.reduce_mean(output_content_relevant + output_style_relevant)
+        layer_loss = tf.reduce_mean(output_content_relevant) + tf.reduce_mean(output_style_relevant)
         style_content_loss += layer_loss * weight
     
-    return style_content_loss, fg_cast, bg_cast, content_encoding
+    return style_content_loss
 
 def mapped_bool_generator(filters):
     # Passed in per input, of shape (n_filters * h * w)

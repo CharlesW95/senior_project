@@ -109,12 +109,12 @@ def train(
     conv4_1_output_width = tf.placeholder(tf.int32, shape=(), name="conv4_1_output_width")
 
     content_loss = build_content_loss(content_layer, content_target, 0.75)
-    style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight)
-    style_content_loss = build_style_content_loss_guided(style_layers, style_targets, output_encoded, trivial_mask, 1.0)
+    style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight * 0.1)
+    style_content_loss = build_style_content_loss_guided(style_layers, style_targets, output_encoded, trivial_mask, 1.5)
 
     # content_loss + tf.reduce_sum(list(style_texture_losses.values())) + 
 
-    loss = style_content_loss
+    loss = style_content_loss + tf.reduce_sum(list(style_texture_losses.values()))
 
     if tv_weight:
         tv_loss = tf.reduce_sum(tf.image.total_variation(images)) * tv_weight
@@ -187,6 +187,7 @@ def train(
                     style_encoded: style_batch_encoded,
                     # "We use the AdaIN output as the content target, instead of
                     # the commonly used feature responses of the content image"
+                    content_target: output_batch_encoded
                     # filtered_x_target: filt_x_targ,
                     # filtered_y_target: filt_y_targ,
                     # conv3_1_output_width: conv3_1_shape[2],
@@ -273,7 +274,6 @@ def build_content_loss(current, target, weight):
     loss *= weight
     return loss
 
-
 def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e-6):
     losses = {}
     layer_weights = [0.5, 0.75, 1.5, 2.0]
@@ -338,8 +338,8 @@ def build_style_content_loss_guided(current_layers, target_layers, content_encod
         # Use the mask to switch them on and off
         # fg_cast = tf.expand_dims(tf.cast(foreground_mask, dtype=tf.float32), 1)
         # bg_cast = tf.expand_dims(tf.cast(background_mask, dtype=tf.float32), 1)
-        output_content_relevant = bg_cast * output_content_diff_sq
-        output_style_relevant = fg_cast * output_style_diff_sq
+        output_content_relevant = output_content_diff_sq
+        output_style_relevant = output_style_diff_sq
 
         # Aggregate to obtain loss term
         layer_loss = tf.reduce_mean(output_content_relevant) + tf.reduce_mean(output_style_relevant)

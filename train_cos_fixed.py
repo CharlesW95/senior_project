@@ -34,7 +34,7 @@ def train(
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=24,
+        num_epochs=30,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
@@ -75,8 +75,11 @@ def train(
     output_encoded = adain(content_encoded, style_encoded)
 
     # TRIVIAL MASK
-    mask_value = gen_trivial_mask()
-    trivial_mask = tf.constant(mask_value, dtype=tf.bool, name="trivial_mask")
+    trivial_mask_value = gen_trivial_mask()
+    trivial_mask = tf.constant(trivial_mask_value, dtype=tf.bool, name="trivial_mask")
+
+    window_mask_value = gen_window_mask()
+    window_mask = tf.constant(window_mask_value, dtype=tf.bool, name="window_mask")
 
     # The same layers we pass in to the decoder need to be the same ones we use
     # to compute loss later.
@@ -109,12 +112,11 @@ def train(
     conv4_1_output_width = tf.placeholder(tf.int32, shape=(), name="conv4_1_output_width")
 
     content_loss = build_content_loss(content_layer, content_target, 0.75)
+
     style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight * 0.1)
-    style_content_loss = build_style_content_loss_guided(style_layers, style_targets, output_encoded, trivial_mask, 1.5)
+    style_content_loss = build_style_content_loss_guided(style_layers, style_targets, output_encoded, trivial_mask, window_mask, 1.0)
 
-    # content_loss + tf.reduce_sum(list(style_texture_losses.values())) + 
-
-    loss = style_content_loss + tf.reduce_sum(list(style_texture_losses.values()))
+    loss = tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
 
     if tv_weight:
         tv_loss = tf.reduce_sum(tf.image.total_variation(images)) * tv_weight
@@ -298,51 +300,76 @@ def build_style_texture_losses(current_layers, target_layers, weight, epsilon=1e
 
     return losses # Returns a dictionary
 
+
+def build_style_texture_losses_guided(current_layers, target_layers, weight, mask, epsilon=1e-6):
+    losses = {}
+    layer_weights = [0.5, 0.75, 1.5, 2.0]
+    for i, layer in enumerate(current_layers):
+        current, target = current_layers[layer], target_layers[layer]
+
+        # Use the trivial mask to perform some kind of boolean masking
+
+        current_mean, current_var = tf.nn.moments(current, axes=[2,3], keep_dims=True)
+        current_std = tf.sqrt(current_var + epsilon)
+
+        target_mean, target_var = tf.nn.moments(target, axes=[2,3], keep_dims=True)
+        target_std = tf.sqrt(target_var + epsilon)
+
+        mean_loss = tf.reduce_sum(tf.squared_difference(current_mean, target_mean))
+        std_loss = tf.reduce_sum(tf.squared_difference(current_std, target_std))
+
+        # normalize w.r.t batch size
+        n = tf.cast(tf.shape(current)[0], dtype=tf.float32)
+        mean_loss /= n
+        std_loss /= n
+
+        losses[layer] = (mean_loss + std_loss) * weight * layer_weights[i]
+
+    return losses # Returns a dictionary
+
 # Shape of (8, 1, 32, 32)
 def gen_trivial_mask():
-    vals = [[[[False] * 32] * 32] * 1] * 8
-    vals = np.array(vals)
-    vals[:, :, 8:24, 8:24] = True
+    vals_left = [[[[True] * 16] * 32] * 512] * 8
+    vals_left = np.array(vals_left)
+
+    vals_right = [[[[True] * 16] * 32] * 512] * 8
+    vals_right = np.array(vals_right)
+
+    vals = np.concatenate((vals_left, vals_right), axis=3)
     return vals
 
-def build_style_content_loss_guided(current_layers, target_layers, content_encoding, mask, weight):
+# Window mask is useful for masking texture
+def gen_window_mask():
+    vals = [[[[False] * 32] * 32] * 512] * 8
+    vals = np.array(vals)
+    vals[:, :, 4:28, 4:28] = True
+    return vals
+
+def build_style_content_loss_guided(current_layers, target_layers, content_encoding, trivial_mask, window_mask, weight):
     global output_width_name
 
     cos_layers = ["conv4_1"]
     output_width_names = ["conv4_1_output_width"]
 
     style_content_loss = 0.0
-    activation_threshold = 0.025
 
     for i, layer in enumerate(cos_layers):
         output_width_name = output_width_names[i] # Set the global variable
         current, target = current_layers[layer], target_layers[layer]
 
-        # NOTE: Attempting trivial mask
-        bg_mask = tf.logical_not(mask)
-        bg_cast = tf.cast(bg_mask, dtype=tf.float32)
-        fg_cast = tf.cast(mask, dtype=tf.float32)
-        
-        # Using the first 2 layers of content encoding, generate a foreground and background mask.
-        # Content encoding is of shape: (batch_size * filters * h * w)
-        # content_first, content_second = content_encoding[:, 0, :, :], content_encoding[:, 1, :, :]
-        # content_first_mask = content_first > activation_threshold
-        # content_second_mask = content_second <= activation_threshold
-        # foreground_mask = tf.logical_or(content_first_mask, content_second_mask)
-        # background_mask = tf.logical_not(foreground_mask)
+        style_mask = window_mask
+        content_mask = tf.logical_not(style_mask)
 
-        # # Compute squared differences of activations
-        output_content_diff_sq = tf.squared_difference(current, content_encoding)
+        # Compute squared differences of activations
         output_style_diff_sq = tf.squared_difference(current, target)
-
-        # Use the mask to switch them on and off
-        # fg_cast = tf.expand_dims(tf.cast(foreground_mask, dtype=tf.float32), 1)
-        # bg_cast = tf.expand_dims(tf.cast(background_mask, dtype=tf.float32), 1)
+        output_content_diff_sq = tf.squared_difference(current, content_encoding)
+        
+        output_style_relevant = tf.boolean_mask(output_style_diff_sq, style_mask)
+        # output_content_relevant = tf.boolean_mask(output_content_diff_sq, content_mask)
         output_content_relevant = output_content_diff_sq
-        output_style_relevant = output_style_diff_sq
-
+        
         # Aggregate to obtain loss term
-        layer_loss = tf.reduce_mean(output_content_relevant) + tf.reduce_mean(output_style_relevant)
+        layer_loss = tf.reduce_mean(output_style_relevant) + tf.reduce_mean(output_content_relevant) * 2.0
         style_content_loss += layer_loss * weight
     
     return style_content_loss

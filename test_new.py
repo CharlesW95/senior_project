@@ -230,8 +230,8 @@ def style_transfer(
             # TODO: Change these layers.
             layersToViz = [conv3_1_out_style, conv4_1_out_style, conv3_1_out_output, conv4_1_out_output]
 
-            for i, layer in enumerate(layersToViz):
-                visualizeActivations(layer, plotName=str(i+1))
+            # for i, layer in enumerate(layersToViz):
+            #     visualizeActivations(layer, plotName=str(i+1))
 
 
 def visualizeActivations(layerOutput, plotName="figure"):

@@ -189,7 +189,7 @@ def style_transfer(
                 # NOTE: This is the part we care about, if only 1 style image is provided.
                 style_name = get_filename(style_path)
                 style_image = load_image(style_path, style_size, crop=True) # This only gives us square crop
-                # style_image = center_crop_np(style_image) # Actually crop the center out
+                style_image = center_crop_np(style_image) # Actually crop the center out
 
                 if preserve_color:
                     style_image = coral(style_image, content_image)

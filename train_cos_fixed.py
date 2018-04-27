@@ -34,7 +34,7 @@ def train(
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=30,
+        num_epochs=244,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
@@ -113,7 +113,7 @@ def train(
 
     content_loss = build_content_loss(content_layer, content_target, 0.75)
 
-    style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight * 0.1)
+    style_texture_losses = build_style_texture_losses(style_layers, style_targets, style_weight * 0.1 * 2.0)
     style_content_loss = build_style_content_loss_guided(style_layers, style_targets, output_encoded, trivial_mask, window_mask, 1.0)
 
     loss = tf.reduce_sum(list(style_texture_losses.values())) + style_content_loss
@@ -176,11 +176,6 @@ def train(
                     content_encoded: content_batch_encoded,
                     style_encoded: style_batch_encoded
                 })
-
-                # NOTE: Need to compute output shapes before we can actually compute guided COS loss.
-                # conv3_1_shape, conv4_1_shape = sess.run([conv3_1_output_width_t, conv4_1_output_width_t], feed_dict={
-                #     images: content_batch
-                # })
 
                 # step 2
                 # run the output batch through the decoder, compute loss

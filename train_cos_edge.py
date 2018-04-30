@@ -11,6 +11,7 @@ from adain.nn import build_vgg, vgg_layer_params, build_decoder
 from adain.norm import adain
 from adain.util import get_params
 from adain.weights import open_weights
+from edge_detectors import edge_detection
 
 import pandas as pd
 import numpy as np
@@ -34,7 +35,7 @@ def train(
         learning_rate_decay=5e-5,
         momentum=0.9,
         batch_size=8,
-        num_epochs=44,
+        num_epochs=244,
         content_layer='conv4_1',
         style_layers='conv1_1,conv2_1,conv3_1,conv4_1',
         tv_weight=0,
